@@ -1,0 +1,522 @@
+<!doctype html>
+<html class="no-js" lang="en">
+
+<head>
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-FEDBM7F51Q"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-FEDBM7F51Q');
+  </script>
+
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <title>💚 ◼️ 👞 ネストされたセット+ PostgreSQL TRIGGER 🍎 👵 🚙</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <meta name="description" content="挑戦する  ネストされたセットなどのツリーから選択を行うのがどれほど便利で、それを管理するのがどれほど便利でないか。 id-> parent_idのようなツリーを管理するのは便利ですが、選択に再帰を使用するのは便利ではなく、費用もかかりません。 ツリーの管理にモジュールを使用すると、問題の一部が削除...">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml"/>
+
+  <link rel="stylesheet" href="../../css/main.css">
+
+  <link href="https://fonts.googleapis.com/css?family=Quicksand&display=swap" rel="stylesheet">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+  <script>document.write('<script src="https://pagea' + 'd2.googles' + 'yndication.com/pagea' + 'd/js/a' + 'dsby' + 'google.js"><\/script>')</script>
+  <script>
+        var superSpecialObject = {};
+        superSpecialObject['google_a' + 'd_client'] = 'ca-p' + 'ub-6974184241884155';
+        superSpecialObject['enable_page_level_a' + 'ds'] = true;
+       (window['a' + 'dsbygoogle'] = window['a' + 'dsbygoogle'] || []).push(superSpecialObject);
+  </script>
+</head>
+
+<body>
+  <!--[if lte IE 9]>
+    <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience and security.</p>
+  <![endif]-->
+  <header class="page-header js-page-header">
+    <a class="page-header-logo-container" href="https://tech-in-japan.github.io/index.html"></a>
+    <div class="page-header-text">Clever Geek Handbook</div>
+  </header>
+  <section class="page js-page"><h1>ネストされたセット+ PostgreSQL TRIGGER</h1><div class="post__text post__text-html js-mediator-article" id="post-content-body" data-io-article-url="https://habr.com/ru/post/63416/"><h4> 挑戦する </h4> ネストされたセットなどのツリーから選択を行うのがどれほど便利で、それを管理するのがどれほど便利でないか。  id-&gt; parent_idのようなツリーを管理するのは便利ですが、選択に再帰を使用するのは便利ではなく、費用もかかりません。 ツリーの管理にモジュールを使用すると、問題の一部が削除されますが、データベースを操作するプロセスが完全に透過的ではないことは明らかです。 データを変更するには、いくつかの方法を使用して、ツリー内のノードの場所を変更します。その他の方法に加えて、トランザクションは問題ありません。 この矛盾は、次の2つの方法で解決できます。 <ul><li> ストアドプロシージャを使用してテーブルを操作し、両方の更新メソッド（挿入、削除）を組み合わせます。 </li><li> トリガーを使用して、非標準の作業方法を除外します。 </li></ul> 最初の方法は、テーブルの構造を変更するときにプロシージャも変更する必要があるという点で不便です。また、テーブルを操作するときは、データへのすべての変更が直接のリクエストではなくプロシージャを通過するようにできるだけ注意する必要があります。  2番目の方法は、追加のブールフィールドを導入することでテーブルをやや難しくします。また、作業の最大限の透明性を実現することはできますが、「耳をかすめる」必要もあります。1番目の方法は、特にインターネット上のどこかで既に同様のソリューションがあります。現時点では私に関係がありますが、MySQLのアドオンは後で作成します。 <a name="habracut"></a><h4> テーブル </h4> それで、どんなトリガーが必要でしょうか： <ul><li> レコードを挿入する前に、作成されたノードのツリーとキーにギャップを作成します。 </li><li> 更新前-ツリーを再構築し、更新されたノードのキーを生成します。 </li><li> 削除後-ノードの削除後に残っているツリーのギャップの削除。 </li></ul> 熊手： <ul><li> トリガーの期間中は、テーブルをロックする必要があります。同じテーブルに複数のツリーを保持している場合は、別のツリーをロックする必要があります。 </li><li>  PostgreSQLおよびMySQLでは、このようにトリガーの再帰をオフにすることはできません。 </li></ul>  2番目のポイントはより詳細です。更新前のトリガーでは、同じテーブルのレコードを更新できます。これは、トリガーの繰り返し呼び出し、および削除後に呼び出されるトリガーを必要とします。 トリガーからのリクエストが私たちから呼び出されるかどうかを理解するために、データではなくトリガーのパラメーター（フラグ）としてリクエストに渡す2つの追加のブールフィールドを導入します。 なぜ2つですか？後で説明しますが、いくつかのツリーが格納されることを考慮して、テーブルの構造をすぐに作成します。その理由を説明します。 口に泡があると証明する愚かな開発者の話を聞いて涙が出るのはおもしろいです。多くのノードがあり、ノードを更新するとツリー全体に影響することがあります。これはデータベースにとって非常に困難です。 はい、正確に。 私は主張しません。たった今、1つのツリーに膨大な数のノードがありません。 <ul><li> 共通のルートノードは使用しません。 </li><li> ツリーをゼロレベルのノードに分割します。 </li></ul> 例：いくつかのフォーラムがあります。 フォーラムセクションには1'000件の投稿があり、各投稿には1'000件のコメントがあります。 合計コメント-1'000'000。したがって、フォーラムセクションはコメントのルートノードではなく、投稿が同じツリーのノードではないように、ツリーのセパレータにすぎません。 その結果、1,000個のコメントに対して1,000個の個別のツリーがあります。 更新は、最大1,000エントリ内でのみ発生します。 場合によっては、これがたくさんある場合、ツリーセパレーターは第1レベルのコメントになります。 その結果、ツリーの再構築はベースにそれほど負荷がかかりません。 数学の部分を学びましょう悲しいテーブル構造については話しましょう：SQLコード（1） <pre>作成
+   ns_tree（
+     id SERIAL、
+     left_key INTEGER NOT NULL、
+     right_key INTEGER NOT NULL、
+    レベルINTEGER NOT NULL DEFAULT 0、
+    ツリーINTEGER NOT NULL、    
+     parent_id INTEGER NOT NULL DEFAULT 0、
+     _trigger_lock_update BOOLEAN NOT NULL DEFAULT FALSE、
+     _trigger_for_delete BOOLEAN NOT NULL DEFAULT FALSE、
+     field_1 ...、
+     ...
+主キー（id）
+ ）;
+    </pre> 実際には<i>-_trigger_lock_update</i>と<i>_trigger_for_delete</i>は補助フィールドであり、トランザクションが完了するまで関数を変更ツリーにブロックします：SQLコード（2） <pre>関数の作成または置換lock_ns_tree（整数）
+    ブール値ASを返します
+ $ BODY $
+ $ 1のtree_idエイリアスを宣言します。
+     _id INTEGER;
+開始
+     SELECT ID
+         INTO _id
+         ns_treeから
+         WHERE tree = tree_id FOR UPDATE;
+     TRUEを返します。
+終了
+ $ BODY $
+  言語 'plpgsql'揮発性
+  費用100;
+ ALTER FUNCTION lock_ns_tree（整数）OWNER TOユーザー。
+    </pre><h4> レコードを作成 </h4> ツリーにノードを追加するための3つのオプションがあります。 <ul><li> 特定のノードの従属に追加してから、 <i>parent_id</i>を渡し<i>ます</i> 。 </li><li> ツリーの特定のポイントに追加して、 <i>left_key</i>を渡し<i>ます</i> 。 </li><li> ツリーの最後に追加すると、余分なものを転送する必要はありません。 </li></ul> 同じ手順で、作成されたノードの宛先を決定します。  SQLコード（3） <pre> ns_tree_before_insert_func（）関数の作成または置換
+    リターンAS
+ $ BODY $
+デカール
+     _left_key INTEGER;
+     _level INTEGER;
+     _tmp_left_key INTEGER;
+     _tmp_right_key INTEGER;
+     _tmp_level INTEGER;
+     _tmp_id INTEGER;
+     _tmp_parent_id INTEGER;
+開始
+     PERFORM lock_ns_tree（NEW.tree）;
+ -これらのフィールドをペンで設定することはできません：
+     NEW._trigger_for_delete：= FALSE;
+     NEW._trigger_lock_update：= FALSE;
+     _left_key：= 0;
+     _level：= 0;
+ -親を指定した場合：
+     NEW.parent_idがNULLではなく、NEW.parent_id&gt; 0の場合
+         SELECT right_key、「レベル」+1
+             INTO _left_key、_level
+             ns_treeから
+             WHERE id = NEW.parent_id AND
+                  ツリー= NEW.tree;
+    終了IF;
+ -左キーを指定した場合：
+     NEW.left_keyがNULLではない場合
+        NEW.left_key&gt; 0 AND 
+        （_left_keyはNULLまたは_left_key = 0）THEN
+         SELECT id、left_key、right_key、 "level"、parent_id 
+             INTO _tmp_id、_tmp_left_key、_tmp_right_key、_tmp_level、_tmp_parent_id
+             ns_treeから
+             WHEREツリー= NEW.tree AND（left_key = NEW.left_key OR right_key = NEW.left_key）;
+         _tmp_left_keyがNULLではなく、かつ_tmp_left_key&gt; 0およびNEWの場合、left.key = _tmp_left_key THEN
+             NEW.parent_id：= _tmp_parent_id;
+             _left_key：= NEW.left_key;
+             _level：= _tmp_level;
+         ELSIF _tmp_left_keyはNULLではなく、_tmp_left_key&gt; 0およびNEW.left_key = _tmp_right_key THEN
+             NEW.parent_id：= _tmp_id;
+             _left_key：= NEW.left_key;
+             _level：= _tmp_level + 1;
+        終了IF;
+    終了IF;
+ -親キーまたは左キーが指定されていない場合、または何も見つからなかった場合：
+     _left_keyがNULLまたは_left_key = 0の場合
+         SELECT MAX（right_key）+ 1
+             INTO _left_key
+             ns_treeから
+             WHEREツリー= NEW.tree;
+         _left_keyがNULLまたは_left_key = 0の場合
+             _left_key：= 1;
+        終了IF;
+         _level：= 0;
+         NEW.parent_id：= 0; 
+    終了IF;
+ -受信したノードのキーを設定します。
+     NEW.left_key：= _left_key;
+     NEW.right_key：= _left_key + 1;
+     NEW。 "レベル"：= _level;
+ -挿入ポイントでツリーにブレークを形成します。
+     ns_treeの更新
+         SET left_key = left_key + 
+             left_key&gt; = _left_keyの場合 
+              その後2 
+              その他0 
+             END、
+             right_key = right_key + 2
+             _trigger_lock_update = TRUE
+         WHEREツリー= NEW.tree AND right_key&gt; = _left_key;
+    新しいリターン;
+終了
+ $ BODY $
+  言語 'plpgsql'揮発性
+  費用100;
+ ALTER FUNCTION ns_tree_before_insert_func（）OWNER TOユーザー。
+
+ CREATE TRIGGER ns_tree_before_insert_tr
+    挿入する前に
+     ns_treeで
+    各行ごと
+     EXECUTE PROCEDURE ns_tree_before_insert_func（）;
+    </pre> 今、いくつかの明確化： <ul><li>  <i>_trigger_lock_update</i>と<i>_trigger_for_delete</i>は制御フィールドであるため、ユーザーの希望に関係なくすぐにリセットします。 </li><li>  <i>parent_id</i>を指定したとしても、そのようなノードがあり、対応するツリーにあるという事実ではありません。 現在の場合、このツリーでノードが見つからない場合、 <i>parent_idが</i>リセットされ、ノードはツリーの最後に挿入されます。 または、ツリーでフィルタリングできますが、 <i>id</i>でノードを検索するだけで、作成されたノードの<i>ツリー</i>フィールドを更新する必要があります。 それはすべて、フィールドの優先度と特定の実装に依存します。 </li><li> 左キーを指定した場合、少なくとも作成されたノードの親を計算する必要があります。原則に従って親を決定します。左キーを使用してノードが見つかった場合、親は見つかったノードと同じになり、そうでない場合は親になります見つかったノード、レベルも構築します。 ノードが見つからない場合、ツリーの最後に挿入すると、 <i>left_key</i>がリセットされます。 </li><li> ギャップの形成中に、 <i>_trigger_lock_update</i>フィールドが追加で転送されます。これは、 <i>UPDATE</i>のトリガーが、この更新がツリーの構造に排他的に接続されていることを認識し、最終キー値がすでに送信されているため、構造の追加の計算と変更が不要であるためです; </li></ul><h4> レコードを編集 </h4> より正確には、このトリガーは変更可能な<i>データで</i>はなく、ツリーの構造でのみ機能し<i>ます。</i>何らかのアクションを強制する<i>主な</i>パラメーターは、 <i>parent_id</i>または<i>left_keyです</i> （もちろん、トリガーの制御パラメーターとして<i>_trigger_lock_update</i>を思い出してください）。アルゴリズムは単純です。その後、ツリーを再構築します。  SQLコード（4） <pre>関数の作成または置換ns_tree_before_update_func（）
+  リターンAS
+ $ BODY $
+デカール
+     _left_key INTEGER;
+     _level INTEGER;
+     _skew_tree INTEGER;
+     _skew_level INTEGER;
+     _skew_edit INTEGER;
+     _tmp_left_key INTEGER;
+     _tmp_right_key INTEGER;
+     _tmp_level INTEGER;
+     _tmp_id INTEGER;
+     _tmp_parent_id INTEGER;
+開始
+     PERFORM lock_ns_tree（OLD.tree）;
+ -何でもする価値があるか：
+     NEW._trigger_lock_update = TRUEの場合
+         NEW._trigger_lock_update：= FALSE;
+         IF NEW._trigger_for_delete = TRUE THEN
+             NEW = OLD;
+             NEW._trigger_for_delete = TRUE;
+            新しいリターン;
+        終了IF;
+        新しいリターン;
+    終了IF;
+ -ユーザーが変更できないフィールドの値をリセットします。
+     NEW._trigger_for_delete：= FALSE;
+     NEW.tree：= OLD.tree;
+     NEW.right_key：= OLD.right_key;
+     NEW。 "レベル"：= OLD。 "レベル";
+     NEW.parent_idがNULLの場合NEW.parent_id：= 0; 終了IF;
+ -ツリーの構造に関連する変更があるかどうかを確認します
+     NEW.parent_id = OLD.parent_idおよびNEW.left_key = OLD.left_keyの場合
+    その後
+        新しいリターン;
+    終了IF;
+ -ツリーを再構築しています。先に進みましょう。
+     _left_key：= 0;
+     _level：= 0;
+     _skew_tree：= OLD.right_key-OLD.left_key + 1;
+ -移動先を決定します。
+ -parent_idが変更された場合：
+     NEW.parent_id &lt;&gt; OLD.parent_idの場合
+ -別の悪にさらされている場合：
+         NEW.parent_id&gt; 0の場合
+             SELECT right_key、レベル+ 1
+                 INTO _left_key、_level
+                 ns_treeから
+                 WHERE id = NEW.parent_id AND tree = NEW.tree;
+ -それ以外の場合、ツリーのルートに転送します。
+        その他
+             SELECT MAX（right_key）+ 1 
+                 INTO _left_key
+                 ns_treeから
+                 WHEREツリー= NEW.tree;
+             _level：= 0;
+        終了IF;
+ -突然親が移動したノードの範囲内にある場合は、以下を確認してください。
+         _left_keyがNULLではない場合 
+            _left_key&gt; 0 AND
+            _left_key&gt; OLD.left_key AND
+            _left_key &lt;= OLD.right_key 
+        その後
+            NEW.parent_id：= OLD.parent_id;
+            NEW.left_key：= OLD.left_key;
+           新しいリターン;
+        終了IF;
+    終了IF;
+ -left_keyが指定され、parent_idが指定されていない場合
+     _left_keyがNULLまたは_left_key = 0の場合
+         SELECT id、left_key、right_key、 "level"、parent_id 
+             INTO _tmp_id、_tmp_left_key、_tmp_right_key、_tmp_level、_tmp_parent_id
+             ns_treeから
+             WHEREツリー= NEW.tree AND（right_key = NEW.left_key OR right_key = NEW.left_key-1）
+             LIMIT 1;
+         _tmp_left_keyがNULLではなく、_tmp_left_key&gt; 0およびNEW.left_key-1 = _tmp_right_keyの場合
+             NEW.parent_id：= _tmp_parent_id;
+             _left_key：= NEW.left_key;
+             _level：= _tmp_level;
+         ELSIF _tmp_left_keyはNULLではなく、_tmp_left_key&gt; 0およびNEW.left_key = _tmp_right_key THEN
+             NEW.parent_id：= _tmp_id;
+             _left_key：= NEW.left_key;
+             _level：= _tmp_level + 1;
+         ELSIF NEW.left_key = 1 THEN
+             NEW.parent_id：= 0;
+             _left_key：= NEW.left_key;
+             _level：= 0;
+        その他
+            NEW.parent_id：= OLD.parent_id;
+            NEW.left_key：= OLD.left_key;
+           新しいリターン;
+        終了IF;
+    終了IF;
+ -これで、ツリーの移動先がわかりました
+         _skew_level：= _level-OLD。 "level";
+     IF _left_key&gt; OLD.left_key THEN
+ -ツリーを上に移動する
+         _skew_edit：= _left_key-OLD.left_key-_skew_tree;
+         ns_treeの更新
+             SET left_key = right_key &lt;= OLD.right_keyの場合
+                                  THEN left_key + _skew_edit
+                                 その他の場合left_key&gt; OLD.right_keyの場合
+                                            THEN left_key-_skew_tree
+                                            ELSE left_key
+                                      終了
+                             END、
+                 "level" = right_key &lt;= OLD.right_keyの場合 
+                                  THEN "レベル" + _skew_level
+                                  ELSE「レベル」
+                             END、
+                 right_key = right_key &lt;= OLD.right_keyの場合 
+                                  THEN right_key + _skew_edit
+                                 その他のケースright_key &lt;_left_keyの場合
+                                            THEN right_key-_skew_tree
+                                            ELSE right_key
+                                      終了
+                             END、
+                 _trigger_lock_update = TRUE
+             WHEREツリー= OLD.tree AND
+                   right_key&gt; OLD.left_key AND
+                   left_key &lt;_left_key AND
+                   id &lt;&gt; OLD.id;
+         _left_key：= _left_key-_skew_tree;
+    その他
+ -ツリーを下に移動する：
+         _skew_edit：= _left_key-OLD.left_key;
+         ns_treeの更新
+            セット
+                 right_key = left_key&gt; = OLD.left_keyの場合
+                                  THEN right_key + _skew_edit
+                                 その他の場合right_key &lt;OLD.left_keyの場合
+                                            THEN right_key + _skew_tree
+                                            ELSE right_key
+                                      終了
+                             END、
+                 "level" =場合left_key&gt; = OLD.left_keyの場合
+                                  THEN "レベル" + _skew_level
+                                  ELSE「レベル」
+                             END、
+                 left_key =ケースleft_key&gt; = OLD.left_keyの場合
+                                  THEN left_key + _skew_edit
+                                 その他の場合left_key&gt; = _left_key
+                                            THEN left_key + _skew_tree
+                                            ELSE left_key
+                                      終了
+                             END、
+                  _trigger_lock_update = TRUE
+             WHEREツリー= OLD.tree AND
+                   right_key&gt; = _left_key AND
+                   left_key &lt;OLD.right_key AND
+                   id &lt;&gt; OLD.id;
+    終了IF;
+ -ツリーが再構築され、現在のノードのみが残りました
+     NEW.left_key：= _left_key;
+     NEW。 "レベル"：= _level;
+     NEW.right_key：= _left_key + _skew_tree-1;
+    新しいリターン;
+終了
+ $ BODY $
+    言語 'plpgsql'揮発性
+    費用100;
+ ALTER FUNCTION ns_tree_before_update_func（）OWNER TOユーザー;
+
+ CREATE TRIGGER ns_tree_before_update_tr
+    更新前
+     ns_treeで
+    各行ごと
+     EXECUTE PROCEDURE ns_tree_before_update_func（）;
+    </pre> 説明： <ul><li> 最初に、 <i>_trigger_lock_update</i>パラメーターに加えて、 <i>_trigger_for_delete</i>パラメーターもチェックします。 これは、削除中にフィールドの変更などのパラメーターを渡さないため、特定のレコードの更新を介してレコードの削除をトリガーするためです。 ただし、さらに明確になります。 </li><li> 繰り返しますが、この場合、 <i>parent_id</i>は<i>left_key</i>よりも優先されるため、最初にチェックします。 </li><li>  <i>left_key</i>をチェックする<i>とき、</i>最初に、移動したノードの前にあるノード（ <i>right_key = _left_key + 1</i> ）、またはノードの移動先のノード（ <i>right_key = _left_key</i> ）を選択します。 同時に、場合によっては、クエリ結果が2つのノード（将来のネイバーと将来の親の両方）を返しますが、これはロジックにまったく影響しません。したがって、 <i>LIMIT 1が</i>設定されているため、追加のデータを選択しないだけでなく、ソートは重要ではありません。サンプルの結果が2つのノードであっても、両方とも正しいため、どちらが返されるかに違いはありません。 ただし、移動したノードで<i>left_key = 1</i>を指定した場合、アップストリームノードも親ノードもないことは当然であるため、追加の条件「 <i>ELSIF NEW.left_key = 1</i> 」を使用します。 </li><li> ツリーを再構築するときの追加条件は「 <i>id &lt;&gt; OLD.id</i> 」です。これは、現在変更中のトリガーのレコードを変更できないためです。 </li></ul><h4> レコードを削除 </h4> ここで最も難しいの除去。 まず、ノードを削除するための2つの原則があるためです。 <ul><li> 子孫を持つノードの削除。 </li><li> 子ノードのないノードを削除する一方で、子ノードはツリーのレベルを上に移動します。 </li></ul> 第二に、トリガーの再帰呼び出しを制限するために削除要求でパラメーターを渡すことはできませんが、トリガーの再帰呼び出しは子孫を持つノードを削除する場合にのみ関連します。両方の削除原則に対してユニバーサルトリガーを作成することは有益ではありません。ロジックが多すぎます。 結局のところ、2つの異なるソリューションの方が優れています最初のソリューション（子孫を持つノードを削除する）では、次のアルゴリズムを使用します。 <ul><li> 子ノードを更新して、フィールド（パラメーター） <i>_trigger_for_delete</i>を設定します。 </li><li> 子ノードを削除します。 </li><li> ツリー内のキーのギャップを削除します（ツリーを再配置します）。 </li></ul>  SQLコード（5） <pre>関数の作成または置換ns_tree_after_delete_func（）
+    リターンAS
+ $ BODY $
+デカール
+     _skew_tree INTEGER;
+開始
+     PERFORM lock_ns_tree（OLD.tree）;
+ -トリガーを実行する価値があるかどうかを確認します。
+     OLD._trigger_for_delete = TRUEの場合は、OLDを返します。 終了IF;
+ -子ノードの削除時にマークを付けます：
+     ns_treeの更新
+         SET _trigger_for_delete = TRUE、
+             _trigger_lock_update = TRUE
+        どこ
+            ツリー= OLD.tree AND
+             left_key&gt; OLD.left_key AND
+             right_key &lt;OLD.right_key;
+ -マークされたノードを削除します。
+     ns_treeから削除
+        どこ
+            ツリー= OLD.tree AND
+             left_key&gt; OLD.left_key AND
+             right_key &lt;OLD.right_key;
+ -キーのギャップを削除します。
+     _skew_tree：= OLD.right_key-OLD.left_key + 1;
+     ns_treeの更新
+         SET left_key = left_key&gt; OLD.left_keyの場合
+                             THEN left_key-_skew_tree
+                             ELSE left_key
+                        END、
+             right_key = right_key-_skew_tree、
+             _trigger_lock_update = TRUE
+         WHERE right_key&gt; OLD.right_key AND
+            ツリー= OLD.tree;
+    戻る;
+終了
+ $ BODY $
+    言語 'plpgsql'揮発性
+    費用100;
+ ALTER FUNCTION ns_tree_after_delete_func（）OWNER TOユーザー;
+
+ CREATE TRIGER ns_tree_after_delete_tr
+    削除後
+     ns_treeで
+    各行ごと
+     EXECUTE PROCEDURE ns_tree_after_delete_func（）;
+    </pre>  2番目のソリューションでは、子ツリーを1レベル上に移動し、キーブレークを削除します。  SQLコード（6） <pre>関数の作成または置換ns_tree_after_delete_2_func（）
+    リターンAS
+ $ BODY $
+デカール
+開始
+     PERFORM lock_ns_tree（OLD.tree）;
+ -キーのギャップを削除し、子ノードを移動します。
+    ns_treeの更新
+         SET left_key = left_key &lt;OLD.left_keyの場合
+                             THEN left_key
+                            その他のケース（right_key &lt;OLD.right_keyの場合）
+                                       THEN left_key-1 
+                                       ELSE left_key-2
+                                 終了
+                        END、
+             「レベル」= right_key &lt;OLD.right_keyの場合
+                           次に「レベル」-1 
+                            ELSE「レベル」
+                       END、
+             parent_id = right_key &lt;OLD.right_key AND "level" = OLD.level + 1の場合
+                            OLD.parent_id
+                            ELSE parent_id
+                         END、
+             right_key = right_key &lt;OLD.right_keyの場合
+                              THEN right_key-1 
+                              ELSE right_key-2
+                         END、
+             _trigger_lock_update = TRUE
+         WHERE（right_key&gt; OLD.right_keyまたは
+             （left_key&gt; OLD.left_key AND right_key &lt;OLD.right_key））AND
+            ツリー= OLD.tree;
+    戻る;
+終了
+ $ BODY $
+  言語 'plpgsql'揮発性
+  費用100;
+ ALTER FUNCTION ns_tree_after_delete_2_func（）OWNER TOユーザー;
+
+ CREATE TRIGER ns_tree_after_delete_2_tr
+    削除後
+     ns_treeで
+    各行ごと
+     EXECUTE PROCEDURE ns_tree_after_delete_2_func（）;
+    </pre> 実際にはすべて。 インデックスを置くことだけが残っています（ここでSQLコマンドを書くのは面倒なので、ただ声を出して説明します）。 <ul><li> コンポジットはフィールド（ <i>left_key、right_key、level、tree</i> ）に固有ではありません。 </li><li> フィールド（ <i>parent_id</i> ）で一意ではありません。 </li></ul> お楽しみください;-) </div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+<section class="more-articles-navigation-panel js-more-articles-navigation-panel">
+<h4>More articles:</h4>
+<nav class="list-of-articles-container js-list-of-articles-container"><ul class="list-of-pages js-list-of-pages">
+<li><a href="../J63407/index.html">オンラインメディアの予算。 これは西洋人によってどのように行われますか</a></li>
+<li><a href="../J63409/index.html">Javascriptのパフォーマンス？ ページ再描画のパフォーマンスはどうですか？</a></li>
+<li><a href="../J63410/index.html">休暇に行きますか？</a></li>
+<li><a href="../J63414/index.html">UNIX / Linuxファイルシステムの編成のいくつかの側面について</a></li>
+<li><a href="../J63415/index.html">Bingの最初の月：結果</a></li>
+<li><a href="../J63417/index.html">RIAAは新しい訴訟に勝ちました</a></li>
+<li><a href="../J63422/index.html">WordPressをインストールした後の10のこと（初心者向けのチートシート）</a></li>
+<li><a href="../J63423/index.html">Firefox 3.5でGoogleノートブック拡張機能を機能させる</a></li>
+<li><a href="../J63424/index.html">Emacsとorg-modeで費やした時間の説明</a></li>
+<li><a href="../J63425/index.html">OperaのOperaメニューの調整</a></li>
+</ul></nav>
+</section><br />
+<a href="../../allArticles.html"><strong>All Articles</strong></a>
+<script src="../../js/main.js"></script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript" >
+  (function (d, w, c) {
+      (w[c] = w[c] || []).push(function() {
+          try {
+              w.yaCounter70218013 = new Ya.Metrika({
+                  id:70218013,
+                  clickmap:true,
+                  trackLinks:true,
+                  accurateTrackBounce:true,
+                  webvisor:true
+              });
+          } catch(e) { }
+      });
+
+      var n = d.getElementsByTagName("script")[0],
+          s = d.createElement("script"),
+          f = function () { n.parentNode.insertBefore(s, n); };
+      s.type = "text/javascript";
+      s.async = true;
+      s.src = "https://mc.yandex.ru/metrika/watch.js";
+
+      if (w.opera == "[object Opera]") {
+          d.addEventListener("DOMContentLoaded", f, false);
+      } else { f(); }
+  })(document, window, "yandex_metrika_callbacks");
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/70218013" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+
+<!-- Google Analytics -->
+  <script>
+    window.ga = function () { ga.q.push(arguments) }; ga.q = []; ga.l = +new Date;
+    ga('create', 'G-FEDBM7F51Q', 'auto'); ga('send', 'pageview')
+  </script>
+  <script src="https://www.google-analytics.com/analytics.js" async defer></script>
+
+</section>
+
+<footer class="page-footer">
+  <div class="page-footer-legal-info-container page-footer-element">
+    <p>
+      Clever Geek | <span class="page-footer-legal-info-year js-page-footer-legal-info-year">2020</span>
+    </p>
+  </div>
+  <div class="page-footer-counters-container page-footer-element">
+    <div class="company-info js-company-info" itemscope="" itemtype="http://schema.org/Organization">
+      <span itemprop="name">Western Town Media (WTM)</span>
+      <div itemprop="address" itemscope="" itemtype="http://schema.org/PostalAddress">
+        <span itemprop="streetAddress">1968 Stoney Lonesome Road</span>
+        <br>
+        <span itemprop="postalCode">PA 18640</span>
+        <span itemprop="addressLocality">Pittston, USA</span>
+      </div>
+      <span itemprop="telephone">570-362-1316</span>
+    </div>
+    <script type="application/ld+json">
+      {
+        "@context": "http://schema.org",
+        "@type": "Organization",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Pittston, USA",
+          "postalCode": "PA 18640",
+          "streetAddress": "1968 Stoney Lonesome Road"
+        },
+        "name": "Western Town Media (WTM)",
+        "telephone": "570-362-1316"
+      }
+    </script>
+  </div>
+</footer>
+  
+</body>
+
+</html>
