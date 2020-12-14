@@ -1,0 +1,789 @@
+<!doctype html>
+<html class="no-js" lang="en">
+
+<head>
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-FEDBM7F51Q"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-FEDBM7F51Q');
+  </script>
+
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <title>🧖🏽 🏄 💆🏻 EFIバイトコードからのx86プロシージャコールの整理 🧘🏽 🙎🏼 👨🏼‍🔧</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <meta name="description" content="EFI Byte Codeテクノロジー（略してEBC）を使用すると、ファームウェアプラットフォームの一部として実装された仮想プロセッサで実行されるクロスプラットフォームアプリケーションとドライバーを作成できます。 このプロセッサのアーキテクチャは、Unified Extensible Firmwar...">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml"/>
+
+  <link rel="stylesheet" href="../../css/main.css">
+
+  <link href="https://fonts.googleapis.com/css?family=Quicksand&display=swap" rel="stylesheet">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+  <script>document.write('<script src="https://pagea' + 'd2.googles' + 'yndication.com/pagea' + 'd/js/a' + 'dsby' + 'google.js"><\/script>')</script>
+  <script>
+        var superSpecialObject = {};
+        superSpecialObject['google_a' + 'd_client'] = 'ca-p' + 'ub-6974184241884155';
+        superSpecialObject['enable_page_level_a' + 'ds'] = true;
+       (window['a' + 'dsbygoogle'] = window['a' + 'dsbygoogle'] || []).push(superSpecialObject);
+  </script>
+</head>
+
+<body>
+  <!--[if lte IE 9]>
+    <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience and security.</p>
+  <![endif]-->
+  <header class="page-header js-page-header">
+    <a class="page-header-logo-container" href="https://tech-in-japan.github.io/index.html"></a>
+    <div class="page-header-text">Clever Geek Handbook</div>
+  </header>
+  <section class="page js-page"><h1>EFIバイトコードからのx86プロシージャコールの整理</h1><div class="post__text post__text-html js-mediator-article" id="post-content-body">  EFI Byte Codeテクノロジー（略してEBC）を使用すると、ファームウェアプラットフォームの一部として実装された仮想プロセッサで実行される<a href="http://habrahabr.ru/post/212363/" title="UEFIのコンテキストでのグラフィック機能のクロスプラットフォーム評価">クロスプラットフォームアプリケーション</a>とドライバーを作成できます。 このプロセッサのアーキテクチャは、Unified Extensible Firmware Interface仕様で定義されています。 理想的には、EBCプログラムは、仮想マシンリソース、UEFIシステムテーブル、およびプラットフォームのハードウェア実装から抽象化された他のオブジェクトと排他的に対話する必要があります。 実際には、この原則を厳守すると、ソフトウェア製品の機能が著しく制限されます。 中央処理装置のネイティブコードでサブルーチンを使用し、特定のハードウェアプラットフォームが検出された場合に条件付きで制御を受け取ると、クロスプラットフォームを失うことなく状況から抜け出すことができます。 <a name="habracut"></a>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h4> 問題の声明 </h4>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      EBCアプリケーションから指定されたMSR（モデル固有レジスタ）レジスタを読み取る例を考えてみましょう。 ご存じのとおり、x86命令システムは、ECXレジスタの32ビットMSRアドレスを入力パラメーターとして受け取り、EDX（上位32ビット）およびEAX（下位32ビット）レジスタに64ビットMSRの内容を返すRDMSR（MSR読み取り）命令を提供します）  EBC仮想マシンコマンドシステムは同様の機能を提供しないため、ネイティブコードでのサブルーチン呼び出しが必要です。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <a href="http://jelezo.com.ua/programmy/utilita_uefimark.html" title="UEFImarkユーティリティ">UEFImark x64 Editionの</a>情報および診断ユーティリティでは<a href="http://jelezo.com.ua/programmy/utilita_uefimark.html" title="UEFImarkユーティリティ">RDMSR</a>命令が直接使用され、 <a href="http://jelezo.com.ua/programmy/uefimark_ebc_edition.html" title="UEFImark、EBCエディション">UEFImark EBC Editionでは</a> EBCプログラムからネイティブルーチンを呼び出す必要があることに注意してください。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h4> 実験条件 </h4>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     問題の手順に制御を移す前に、EBCプログラムはx86プラットフォームを検出し、IA32またはx64アーキテクチャのいずれかがサポートされていると判断したと想定されます。 検出方法はこの記事の範囲外であり、今後の出版物で検討する予定です。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     サンプルをブロードキャストするために、FASM 1.69.50が使用されます。  EBC命令はマクロを使用して実装され、x86コードは64ビットモード用にブロードキャストされます。32ビットモードとの互換性を確保する機能については、以下で説明します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h5> プロシージャEBC_Read_MSRの呼び出し </h5>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre><code class="hljs delphi">;--- Subroutine: EBC/x86 gate <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> <span class="hljs-keyword"><span class="hljs-keyword">Read</span></span> MSR ----------------------------------; ; Caller must verify x86 support (IA32 <span class="hljs-keyword"><span class="hljs-keyword">or</span></span> x64) before call this subroutine, ; ; but this subroutine differentiate IA32/x64 internally. ; ; ; ; INPUT: R1 = Global variables pool base address ; ; R6 = MSR <span class="hljs-keyword"><span class="hljs-keyword">index</span></span> (same <span class="hljs-keyword"><span class="hljs-keyword">as</span></span> ECX before RDMSR instruction) ; ; OUTPUT: R3 = MSR data after <span class="hljs-keyword"><span class="hljs-keyword">Read</span></span> (same <span class="hljs-keyword"><span class="hljs-keyword">as</span></span> EDX:EAX after RDMSR instruction) ; ; R4-R7 can be changed ; ;----------------------------------------------------------------------------; EBC_Read_MSR: XOR64 R7,R7 ; R7=<span class="hljs-number"><span class="hljs-number">0</span></span> PUSH64 R7 ; Storage <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> output MOVQ R7,R0 ; Address <span class="hljs-keyword"><span class="hljs-keyword">of</span></span> storage = stack pointer PUSHN R7 ; Parameter<span class="hljs-string"><span class="hljs-string">#2</span></span> = Output address PUSHN R6 ; Parameter<span class="hljs-string"><span class="hljs-string">#1</span></span> = MSR address MOVINW R7,<span class="hljs-number"><span class="hljs-number">1</span></span>,<span class="hljs-number"><span class="hljs-number">0</span></span> CMPI32WEQ R7,<span class="hljs-number"><span class="hljs-number">4</span></span> ; R7=<span class="hljs-number"><span class="hljs-number">4</span></span> <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> <span class="hljs-number"><span class="hljs-number">32</span></span>-bit, R7=<span class="hljs-number"><span class="hljs-number">8</span></span> <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> <span class="hljs-number"><span class="hljs-number">64</span></span>-bit MOVIQW R7,_IA32_Read_MSR ; This pointer <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> IA32 (native width=<span class="hljs-number"><span class="hljs-number">4</span></span>) JMP8CS Native_Gate MOVIQW R7,_x64_Read_MSR ; This pointer <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> x64 (native width=<span class="hljs-number"><span class="hljs-number">8</span></span>) Native_Gate: ADD64 R7,R1 ; Add base address = R1 CALL32EXA R7 POPN R6 ; Remove Parameter<span class="hljs-string"><span class="hljs-string">#1</span></span> POPN R7 ; Remove Parameter<span class="hljs-string"><span class="hljs-string">#2</span></span> POP64 R3 ; <span class="hljs-keyword"><span class="hljs-keyword">Read</span></span> R3 = Output RET</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <b>図</b>  <b>1</b>  <i><a href="">x86 MSR読み取りプロシージャを呼び出すEBCプロシージャ</a></i> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     呼び出し元のEBCプロシージャによって実行される一連の操作を検討します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ol><li> 呼び出されたプロシージャが指定されたMSRレジスタの内容を書き込む64ビット変数のスタック内の予約。 </li><li> 呼び出されたプロシージャの2番目の入力パラメータ-MSRの内容を保存するためのアドレスをスタックに書き込みます。 これは、ステップ1で作成された変数のアドレスです。 </li><li> 呼び出されたプロシージャの最初の入力パラメータであるスタックへの書き込み-レジスタR6のサブルーチンによって採用されたMSRレジスタのアドレス。 </li><li>  EBC命令MOVINWを使用した自然容量の決定。 プラットフォームがx86互換であることが以前に確立されていた場合、自然ビット4の値はIA32（4バイト= 32ビット）を意味し、8はx64（8バイト= 64ビット）を意味します。 </li><li> 呼び出されたサブルーチンへのエントリポイントのアドレスを選択します（手順4の結果に従って、R7レジスタに配置します）。 </li><li> 手順5で取得したアドレスでサブルーチンを呼び出します。 </li><li> 以前に書き込まれたパラメーターをスタックから読み取り、削除すると、ステップ1で作成された変数の値がR3レジスターに読み込まれ、呼び出されたサブルーチンが結果を書き込みました-64ビットMSRコンテンツ。 </li></ol>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      PUSHN（Push Natural）命令によってスタックに書き込まれ、POPN（Pop Natural）命令によってスタックから読み取られるパラメーターのビット深度は、IA32 UEFIでは32ビット、x64 UEFIでは64ビットです。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h5> 呼び出されたプロシージャ：IA32_Read_MSR、x64_Read_MSR </h5>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="hljs delphi">;--- <span class="hljs-keyword"><span class="hljs-keyword">Read</span></span> Model-Specific <span class="hljs-keyword"><span class="hljs-keyword">Register</span></span>, selected by input <span class="hljs-keyword"><span class="hljs-keyword">index</span></span> --------------; ; INPUT: Parm<span class="hljs-string"><span class="hljs-string">#1</span></span> = MSR address (ECX before RDMSR), natural width <span class="hljs-number"><span class="hljs-number">32</span></span>/<span class="hljs-number"><span class="hljs-number">64</span></span> ; ; Parm<span class="hljs-string"><span class="hljs-string">#2</span></span> = Address <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> <span class="hljs-keyword"><span class="hljs-keyword">write</span></span> output data, natural width <span class="hljs-number"><span class="hljs-number">32</span></span>/<span class="hljs-number"><span class="hljs-number">64</span></span> ; ; OUTPUT: R7 = Reserved <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> UEFI status ; ; QWORD at Address [Parm<span class="hljs-string"><span class="hljs-string">#2</span></span>] = MSR data (EDX:EAX after RDMSR) ; ;------------------------------------------------------------------------; IA32_Read_MSR: ; Entry point <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> IA32 push rbx rcx rdx mov ecx,[rsp+<span class="hljs-number"><span class="hljs-number">16</span></span>] ; ECX = Parm<span class="hljs-string"><span class="hljs-string">#1</span></span> = MSR address, assembled same <span class="hljs-keyword"><span class="hljs-keyword">as</span></span> [esp+<span class="hljs-number"><span class="hljs-number">16</span></span>], can use <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> IA32 mov ebx,[rsp+<span class="hljs-number"><span class="hljs-number">20</span></span>] ; EBX = Parm<span class="hljs-string"><span class="hljs-string">#2</span></span> = Output address, assembled same <span class="hljs-keyword"><span class="hljs-keyword">as</span></span> [esp+<span class="hljs-number"><span class="hljs-number">20</span></span>], can use <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> IA32 jmp Entry_R_MSR x64_Read_MSR: ; Entry point <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> x64 push rbx rcx rdx mov rbx,rdx ; RBX=Output address (p<span class="hljs-string"><span class="hljs-string">#2</span></span>), RCX=MSR address (p<span class="hljs-string"><span class="hljs-string">#1</span></span>) Entry_R_MSR: rdmsr ; RCX=Input, EDX:EAX=Output mov [rbx+<span class="hljs-number"><span class="hljs-number">00</span></span>],eax mov [rbx+<span class="hljs-number"><span class="hljs-number">04</span></span>],edx pop rdx rcx rbx ret</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <b>図</b>  <b>2</b> 。  <i><a href="">X86がMSR読み取りプロシージャを呼び出しました</a></i> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     呼び出されたx86プロシージャによって実行される一連の操作を検討します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ol><li>  IA32のエントリポイント（ラベルIA32_Read_MSR）。 レジスタEBX、ECX、EDXのスタックに保存します。 入力パラメーターは、呼び出し側プロシージャーによって作成されたスタックフレームから読み取られます。MSRの内容を保存するためのMSRアドレスと変数アドレスです。 ステップ3に進みます。 </li><li>  x64のエントリポイント（ラベルx64_Read_MSR）。 レジスタスタックRBX、RCX、RDXに保存します。 レジスタでは、RCXとRDXがそれぞれ最初と2番目の入力パラメーターです。 </li><li> ターゲット操作の実行— RDMSR命令を使用してMSRを読み取ります。 </li><li> 読み取ったMSRの内容を2番目の入力パラメーターで指定されたアドレスに保存します。 </li><li> レジスタEDX、ECX、EBX（IA32の場合）またはRDX、RCX、RBX（x64の場合）を復元し、呼び出し元のプロシージャに戻ります。 </li></ol>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     手順を見ると、矛盾が見つかります。64ビットモードの多くの命令は、32ビット分岐の実行に使用されます。たとえば、64ビットレジスタで動作するPUSHおよびPOP命令です。 どのように機能しますか？ 実際、これらの命令の32ビットおよび64ビット形式は同じ方法でエンコードされ、それらの解釈はプロセッサの動作モードによって異なります。 したがって、32ビットモードのコード53hはPUSH EBX命令に対応し、64ビットモードのコードはPUSH RBX命令に対応します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     サブプログラムの入力および出力パラメータの送信メカニズムを検討してください。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      IA32 EFIの場合、呼び出されたルーチンの入力パラメーターはスタックを介して渡されます。 この手順では、最初のパラメーターは[ESP + 16]にあります。 オフセット16は2つの用語で構成されます：4スタックバイトは、サブルーチンから戻るときに必要なEIP命令カウンター、PUSH命令によってスタックに書き込まれたEBX、ECX、EDXレジスタ用の12バイトを格納するために使用されます。  4 + 12 = 16。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      x64 UEFIの場合、呼び出されたサブルーチンの最初の4つの入力パラメーターはレジスタRCX、RDX、R8、R9を通過し、次はスタックを通過します。 この例では、2つのパラメーターのみが使用され、RCXとRDXに渡されます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      IA32 UEFIの場合、x86サブルーチンから戻った後の32ビットx86 EAXレジスターの内容は、64ビットEBCレジスターR7の下位32ビットにあります。  R7の上位32ビットの内容は未定義です。  x64 UEFIの場合、x86サブルーチンから戻った後の64ビットx86 RAXレジスタの内容は、EBCレジスタR7にあります。 この機能は、ステータスコードを送信するのに便利です;考慮された例では使用されません。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     説明されているテクノロジーは、アプリケーションに含まれるプロシージャを呼び出すためだけでなく、その処理がファームウェアに実装されているUEFI APIにアクセスするときにも使用されます。 たとえば、 <a href="https://ru.intel.com/business/community/index.php%3Fautomodule%3Dblog%26blogid%3D59442%26showentry%3D4648" title="EFIバイトコードと時間管理">CPU Architectural Protocol</a>および<a href="https://ru.intel.com/business/community/index.php%3Fautomodule%3Dblog%26blogid%3D59442%26showentry%3D4641" title="UEFIのファイル操作">File I / O Protocol</a>機能を使用する<a href="https://ru.intel.com/business/community/index.php%3Fautomodule%3Dblog%26blogid%3D59442%26showentry%3D4648" title="EFIバイトコードと時間管理">場合</a> 。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h4> まとめ </h4>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     説明された方法は、 <a href="http://habrahabr.ru/post/214119/" title="EFIバイトコードとメモリ操作">EFI Byte Code</a>内で達成できない機能を提供する必要がある場合にのみ使用する必要があります。 そのため、情報診断ユーティリティ<a href="http://jelezo.com.ua/skrinshoty/utilita_uefimark_ebc_edition.html">UEFImark EBC Edition</a>では、ネイティブコードのCPUID命令を使用して、プロセッサモデルとサポートされているテクノロジのリストを表示します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     ハードウェアリソースに直接アクセスすると、クロスプラットフォームのプロビジョニングが複雑になることに注意することが重要です。 特に、上記の例ではx86プラットフォームIA32とx64を区別できるという事実にもかかわらず、制御を移す前に、アプリケーションはx86プラットフォームで動作することを確認する必要があります。  ARMまたはItaniumで実行すると、CPU命令システムの違いにより、予期しない結果が生じます。 </div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+<section class="more-articles-navigation-panel js-more-articles-navigation-panel">
+<h4>More articles:</h4>
+<nav class="list-of-articles-container js-list-of-articles-container"><ul class="list-of-pages js-list-of-pages">
+<li><a href="../J216405/index.html">ワシントンポスト：NSAは、名前のない国からのすべての通話の100％を「書き込み」ます</a></li>
+<li><a href="../J216407/index.html">こんにちは、Bynet！ パルチザンの国に着陸するルネットの冒険</a></li>
+<li><a href="../J216409/index.html">思考の論理。 パート14.海馬</a></li>
+<li><a href="../J21641/index.html">VKontakte.ruの外部リンクを修正するためのGreasemonkeyスクリプト</a></li>
+<li><a href="../J216411/index.html">JTAG周辺機器スキャン：電子プロトタイプのテスト</a></li>
+<li><a href="../J216417/index.html">Microsoft Onenote-今すぐ無料</a></li>
+<li><a href="../J216419/index.html">CanastaとSenoritを使用してAndroid用のOrmを作成する、パート3</a></li>
+<li><a href="../J216427/index.html">アンリアルエンジン4がすべての人に利用可能に</a></li>
+<li><a href="../J21643/index.html">picollat​​or.ruの使用方法。彼に期待することとしないこと</a></li>
+<li><a href="../J216431/index.html">Java 8の新機能</a></li>
+</ul></nav>
+</section><br />
+<a href="../../allArticles.html"><strong>All Articles</strong></a>
+<script src="../../js/main.js"></script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript" >
+  (function (d, w, c) {
+      (w[c] = w[c] || []).push(function() {
+          try {
+              w.yaCounter70218013 = new Ya.Metrika({
+                  id:70218013,
+                  clickmap:true,
+                  trackLinks:true,
+                  accurateTrackBounce:true,
+                  webvisor:true
+              });
+          } catch(e) { }
+      });
+
+      var n = d.getElementsByTagName("script")[0],
+          s = d.createElement("script"),
+          f = function () { n.parentNode.insertBefore(s, n); };
+      s.type = "text/javascript";
+      s.async = true;
+      s.src = "https://mc.yandex.ru/metrika/watch.js";
+
+      if (w.opera == "[object Opera]") {
+          d.addEventListener("DOMContentLoaded", f, false);
+      } else { f(); }
+  })(document, window, "yandex_metrika_callbacks");
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/70218013" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+
+<!-- Google Analytics -->
+  <script>
+    window.ga = function () { ga.q.push(arguments) }; ga.q = []; ga.l = +new Date;
+    ga('create', 'G-FEDBM7F51Q', 'auto'); ga('send', 'pageview')
+  </script>
+  <script src="https://www.google-analytics.com/analytics.js" async defer></script>
+
+</section>
+
+<footer class="page-footer">
+  <div class="page-footer-legal-info-container page-footer-element">
+    <p>
+      Clever Geek | <span class="page-footer-legal-info-year js-page-footer-legal-info-year">2020</span>
+    </p>
+  </div>
+  <div class="page-footer-counters-container page-footer-element">
+    <div class="company-info js-company-info" itemscope="" itemtype="http://schema.org/Organization">
+      <span itemprop="name">Western Town Media (WTM)</span>
+      <div itemprop="address" itemscope="" itemtype="http://schema.org/PostalAddress">
+        <span itemprop="streetAddress">1968 Stoney Lonesome Road</span>
+        <br>
+        <span itemprop="postalCode">PA 18640</span>
+        <span itemprop="addressLocality">Pittston, USA</span>
+      </div>
+      <span itemprop="telephone">570-362-1316</span>
+    </div>
+    <script type="application/ld+json">
+      {
+        "@context": "http://schema.org",
+        "@type": "Organization",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Pittston, USA",
+          "postalCode": "PA 18640",
+          "streetAddress": "1968 Stoney Lonesome Road"
+        },
+        "name": "Western Town Media (WTM)",
+        "telephone": "570-362-1316"
+      }
+    </script>
+  </div>
+</footer>
+  
+</body>
+
+</html>

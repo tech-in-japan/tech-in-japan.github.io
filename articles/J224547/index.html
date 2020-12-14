@@ -1,0 +1,1283 @@
+<!doctype html>
+<html class="no-js" lang="en">
+
+<head>
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-FEDBM7F51Q"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-FEDBM7F51Q');
+  </script>
+
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <title>💀 🏹 🏿 ソースコード分析と自動エクスプロイト生成について 🤪 🖖🏻 ↙️</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <meta name="description" content="最近、怠け者だけがソースコードのセキュリティの分析について書いていません。 数年前にソースコードの分析を新しい誇大広告と見なすことを提案した Gartnerの男が、これをやめるという意志をまだ与えていないためです。 そして、私の仕事の現在の方向（ PT Application Inspectorの開...">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml"/>
+
+  <link rel="stylesheet" href="../../css/main.css">
+
+  <link href="https://fonts.googleapis.com/css?family=Quicksand&display=swap" rel="stylesheet">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+  <script>document.write('<script src="https://pagea' + 'd2.googles' + 'yndication.com/pagea' + 'd/js/a' + 'dsby' + 'google.js"><\/script>')</script>
+  <script>
+        var superSpecialObject = {};
+        superSpecialObject['google_a' + 'd_client'] = 'ca-p' + 'ub-6974184241884155';
+        superSpecialObject['enable_page_level_a' + 'ds'] = true;
+       (window['a' + 'dsbygoogle'] = window['a' + 'dsbygoogle'] || []).push(superSpecialObject);
+  </script>
+</head>
+
+<body>
+  <!--[if lte IE 9]>
+    <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience and security.</p>
+  <![endif]-->
+  <header class="page-header js-page-header">
+    <a class="page-header-logo-container" href="https://tech-in-japan.github.io/index.html"></a>
+    <div class="page-header-text">Clever Geek Handbook</div>
+  </header>
+  <section class="page js-page"><h1>ソースコード分析と自動エクスプロイト生成について</h1><div class="post__text post__text-html js-mediator-article" id="post-content-body"> 最近、怠け者だけがソースコードのセキュリティの分析について書いていません。 数年前にソースコードの分析を新しい誇大広告と見なすことを<a href="http://blogs.gartner.com/neil_macdonald/2011/01/19/static-or-dynamic-application-security-testing-both/">提案した</a> Gartnerの男が、これをやめるという意志をまだ与えていないためです。 そして、私の仕事の現在の方向（ <a href="http://vimeo.com/76045841">PT Application Inspectorの</a>開発への参加、以下AI）と、最近ではソースコード分析のトピックに関する適切な記事がなかったという事実を考えると、今日までなんとなく奇妙なことですこのブログの日には、この燃えるようなトピックについて1日も汚い日はありませんでした。 まあ、修正しました。 <a name="habracut"></a>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     実際、AIのソースコードセキュリティの分析を自動化するためのアプローチについて言えることはすべて、PHDays IVのレポート「 <a href="http://live.digitaloctober.ru/embed/2994">ソースコードによるエクスプロイトの自動生成の問題</a> 」で、Sergey PlekhovとAlexei Moskvinがすでに言っています。 レポートに出席せず、記録を見なかった人のために、記事をさらに読む前にこれを行うことを強くお勧めします。 しかし、Ivan Novikov aka <a href="https://twitter.com/d0znpp">@ d0znpp</a>からのレポートの最後に、「ケースは何ですか？」、「あなたのアプローチは同じRIPSとどのように違いますか？」、および「どのようにエントリポイントを取得しますか？」アプリケーションをデプロイしないと、エクスプロイトの構築に必要な外部データ（たとえば、特権ユーザーの名前とパスワード、エントリポイントへのルートなど）を取得することはできません。 用語の混乱があることをすぐに予約したい（私たちの側で無条件に行われます）：「ソースコードによる攻撃ベクトルのセットを自動的に出力する問題」という名前は、AIの作業中に解決されたタスクの本質をはるかに正確に反映します エクスプロイトとしてAIの出力で判明することを呼び出すことは、実際にはまったく正しくありません。 伝統的な用語での悪用よりもクールだからという理由だけで:)そして、私はこの考えを明らかにし、イヴァンが尋ねた質問に対するより詳細な答えを同僚に補足しようとします。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2> どうしたの？ </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     まず第一に、このケースはコードの欠陥を見つけ、特定のクラスの攻撃に対する脆弱性を確認することにあります。 このケースのフレームワーク内での自動エクスプロイト生成のタスクは、脆弱性の存在を確認する最小限の攻撃ベクトルの結論に達します。 同時に、ベクターは特定のHTTP要求ではなく、システムを脆弱な状態にし、攻撃を成功させる要因の特定のセットを意味します。 さらに言います：一般的なケースでは、攻撃ベクトルをHTTPリクエストのみとして表現することはできません。 第一に、このベクトルには複数のクエリが必要になる場合があるためです。 第二に（そしてこれは重要です）、ベクターにはHTTPリクエストのコンテキストでは記述できない環境プロパティの条件が含まれている可能性があるためです。 それにもかかわらず、検討中の事件の枠組みの中で、私たちは次のことをしなければなりません。  b）何らかの方法で分析結果にそれらを配置します。 これがまさに、このような複雑なベクトルの定義につながったものです。 簡単な例を示します（以降、ASP.NET WebフォームのC＃コードを検討します）。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre><code class="cs hljs"><span class="hljs-keyword"><span class="hljs-keyword">var</span></span> settings = Settings.ReadFromFile(<span class="hljs-string"><span class="hljs-string">"settings.xml"</span></span>); <span class="hljs-keyword"><span class="hljs-keyword">string</span></span> str1; <span class="hljs-keyword"><span class="hljs-keyword">if</span></span> (settings[<span class="hljs-string"><span class="hljs-string">"key1"</span></span>] == <span class="hljs-string"><span class="hljs-string">"validkey"</span></span>) { Response.Write(Request.Params[<span class="hljs-string"><span class="hljs-string">"parm"</span></span>]); } <span class="hljs-keyword"><span class="hljs-keyword">else</span></span> { Response.Write(<span class="hljs-string"><span class="hljs-string">"Wrong key!"</span></span>); }</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     明らかに、この場合、XSS攻撃に対する脆弱性は、settings.xml構成ファイルのkey1パラメーターの値に依存します。 そして、正直にそれを読んだ場合（つまり、実際には、象徴的にSettings.ReadFromFile（ "settings.xml"）を呼び出して結果を変数設定に割り当てない）、2つの可能な方法のうちの1つだけを実行します。ファイルのkey1が「validkey」に設定されていない場合、必然的に脆弱性をスキップすることになります。 最初の呼び出しをシンボリックに実行すると、最終的に次の式が得られます。これは目的のベクトルです。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="cs hljs">Settings.ReadFromFile(<span class="hljs-string"><span class="hljs-string">"setings.xml"</span></span>)[<span class="hljs-string"><span class="hljs-string">"key1"</span></span>] == <span class="hljs-string"><span class="hljs-string">"validkey"</span></span> -&gt; {Request.Params[<span class="hljs-string"><span class="hljs-string">"Parm"</span></span>] = &lt;script&gt;alert(<span class="hljs-number"><span class="hljs-number">0</span></span>)&lt;/script&gt;}</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     これからHTTPエクスプロイトを推測することもできます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="cs hljs">GET http:<span class="hljs-comment"><span class="hljs-comment">//host.domain/path/to/document.aspx?parm=%3Cscript%3Ealert%280%29%3C%2fscript%3E HTTP/1.1</span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     ただし、これは自給自足ではなく、Webアプリケーションの環境に課される条件に依存します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     データベース、ファイルシステム、またはその他の外部ソースから値を取得すると、単純なジレンマにつながります。外部データを取得し、本格的なエクスプロイトを構築する能力がある（理論的には可能）が、潜在的な脆弱性を見逃す実行パスが失われた場合、または外部ソースへの呼び出しを象徴的に処理し、それにより、そのような呼び出しの結果として発生する可能性のあるすべての値と実行パスのセットをカバーします。 また、全天候型の普遍的な攻撃者を作成するのではなく、可能な限りコードセキュリティを分析する人間のルーチンを自動化するというタスクに直面したため、本格的なエクスプロイトを構築する観点から、さらなる人間の作業を必要とする実証済みの論理式の形式でベクトルを取得することは、そのようなエクスプロイトを自動で取得するよりも好ましい機能。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     ただし、外部データを読み取らずに実際にどこにも存在しない状況が発生する可能性があります。これは、アプリケーションコードではなく外部構成ファイルで定義されている場合、Webアプリケーションへのエントリポイントへのルートを決定し、追加のファイルをソースコードと接続することですそれらを構成ファイル（動的言語に関連）にリストし、同様のタスクをいくつか実行します。 しかし、質問はありません。必要な場合は、指を交差させて読みます。 もちろん、できるところ。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     要約すると、現時点では、AIがデータベースからデータを読み取り、分析されたコードのシンボリック実行中にそれを使用するように教えることに対する障害はありません。 ただし、これには、少なくともWebアプリケーションデータベースを展開する必要があり、上記で説明したタスクセットのフレームワーク内で明確な利点を提供することなく、アナライザーの脆弱性検出能力を大幅に低下させます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2> あなたのアプローチはRIPSとどう違いますか？ </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     私がRIPSで採用されている<a href="http://syssec.rub.de/media/emma/veroeffentlichungen/2014/01/21/rips-NDSS14.pdf">アプローチ</a>を判断できる限り、AI'shnyはすべてよりも少し異なります。  RIPSは、多数の標準ライブラリ関数のエミュレーションを使用してデータフローグラフのパスをタグ付けすることにより、古典的な静的汚染分析を実装するという事実から始まり、AIアプローチでは、論理ステートメントの記述形式でモデル（各エントリポイントに1つ）を構築する必要があります各CFGノードのアプリケーションの状態とその達成条件。これにより、エミュレートする代わりに実際のコードを部分的に実行することで、そのパス（if、条件付きリターン、例外処理などを含む）を解決できます。最高の再 キャラクターの実行と比較した結果。 そして、RIPSがカスタムフィルタリング関数で愚かに中断することを（しかしこれに限定されない）終了しますが、AIはそれらを使用しようとします（そしてほとんどの実際のケースで非常に成功します）。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     例を示す方が良いでしょう。 次のソースコードの断片があるとしましょう <a name="cite_ref-1"></a>  <sup><a href="https://habr.com/ru/company/pt/blog/224547/">[1]</a></sup> ： 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="cs hljs"><span class="hljs-keyword"><span class="hljs-keyword">string</span></span> name = Request.Params[<span class="hljs-string"><span class="hljs-string">"name"</span></span>]; <span class="hljs-keyword"><span class="hljs-keyword">string</span></span> key1 = Request.Params[<span class="hljs-string"><span class="hljs-string">"key1"</span></span>]; <span class="hljs-keyword"><span class="hljs-keyword">string</span></span> parm = Request.Params[<span class="hljs-string"><span class="hljs-string">"parm"</span></span>]; <span class="hljs-keyword"><span class="hljs-keyword">byte</span></span>[] data; <span class="hljs-keyword"><span class="hljs-keyword">if</span></span> (<span class="hljs-keyword"><span class="hljs-keyword">string</span></span>.IsNullOrEmpty(parm)) { data = <span class="hljs-keyword"><span class="hljs-keyword">new</span></span> <span class="hljs-keyword"><span class="hljs-keyword">byte</span></span>[<span class="hljs-number"><span class="hljs-number">0</span></span>]; } <span class="hljs-keyword"><span class="hljs-keyword">else</span></span> { data = Convert.FromBase64String(parm); } <span class="hljs-keyword"><span class="hljs-keyword">string</span></span> str1; <span class="hljs-keyword"><span class="hljs-keyword">if</span></span> (name + <span class="hljs-string"><span class="hljs-string">"in"</span></span> == <span class="hljs-string"><span class="hljs-string">"admin"</span></span>) { <span class="hljs-keyword"><span class="hljs-keyword">if</span></span> (key1 == <span class="hljs-string"><span class="hljs-string">"validkey"</span></span>) { str1 = Encoding.UTF8.GetString(data); } <span class="hljs-keyword"><span class="hljs-keyword">else</span></span> { str1 = <span class="hljs-string"><span class="hljs-string">"Wrong key!"</span></span>; Response.Write(str1); <span class="hljs-keyword"><span class="hljs-keyword">return</span></span>; } } <span class="hljs-keyword"><span class="hljs-keyword">else</span></span> { str1 = <span class="hljs-string"><span class="hljs-string">"Wrong role!"</span></span>; } Response.Write(<span class="hljs-string"><span class="hljs-string">"&lt;a href='http://host.domain' onclick='"</span></span> + CustomSanitize(str1) + <span class="hljs-string"><span class="hljs-string">"'&gt;Click me&lt;/a&gt;"</span></span>);</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     明らかに、潜在的な危険な操作が2回あります（以降、PVO-潜在的に脆弱な操作）-HTTP要求に対するサーバーの応答のストリームに書き込むResponse.Writeメソッドへの呼び出し。 最初のケースでは、定数「Wrong Key！」がメソッドに渡されますが、これは私たちには関係ありません。 ただし、2番目の結果は、引数を使用してCustomSanitizeメソッドを呼び出した結果であり、その値は、受信した要求のパラメーターの値から計算されます。 しかし、HTMLマークアップ要素の挿入によってXSS攻撃の可能性を確認するのに十分な値をstr1に転送できるようにするには、何をすべきでしょうか？ この質問に対する答えを見つけるプロセスがどのように見えるか見てみましょう <a name="cite_ref-2"></a>  <sup><a href="https://habr.com/ru/company/pt/blog/224547/">[2]</a></sup> 。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     まず、2番目のResponse.Writeの到達可能性条件を導出します。 それ自体が制御フローに影響を与える構造に埋め込まれていないという事実にもかかわらず、以前のコードブロックでは、コード全体に共通する関数からの戻りがあり、その到達可能性条件は同時にPVOの到達不能の条件でもあります。 明らかに、実行されるreturnステートメントの条件は論理式です：（name == "adm" &amp;&amp; key1！= "Validkey"）。 したがって、その到達不能の条件は次の式になります：（name！= "Adm" || name == "adm" &amp;&amp; key1 == "validkey"）。 この戻り値は2番目のResponse.Writeの到達可能性に影響する唯一のステートメントであるため、最後の式はPVOの到達可能性の条件になります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     実際、式（name！= "Adm" || name == "adm" &amp;&amp; key1 == "validkey"）は、制御フローグラフ上のPVOへのパスを形成するための相互に排他的な2つの条件を提供します。 それぞれが実行されるときのstr1の可能な値を考慮してください。  （name！=“ Adm”）を使用すると、変数str1は定数値“ Wrong role！”を取得します。これにより、攻撃が成功することは間違いありません。 ただし、（name ==“ adm” &amp;&amp; key1 ==“ validkey”）を使用すると、str1はデータ引数を使用してEncoding.UTF8.GetStringメソッドを呼び出した結果を取得します。このメソッドは、次の2つの値を取ります：new byte [0] with string.IsNullOrEmpty （parm）およびConvert.FromBase64String（parm）with！string.IsNullOrEmpty（parm）。 を含む興味のない破棄。 脆弱性値の悪用可能性と、すべての変数の値を汚染源まで巻き戻すと、次の式が得られます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="cs hljs">(Request.Params[<span class="hljs-string"><span class="hljs-string">"name"</span></span>] == <span class="hljs-string"><span class="hljs-string">"adm"</span></span> &amp;&amp; Request.Params[<span class="hljs-string"><span class="hljs-string">"key1"</span></span>] == <span class="hljs-string"><span class="hljs-string">"validkey"</span></span> &amp;&amp; !<span class="hljs-keyword"><span class="hljs-keyword">string</span></span>.IsNullOrEmpty(Request.Params[<span class="hljs-string"><span class="hljs-string">"parm"</span></span>])) -&gt; Response.Write(<span class="hljs-string"><span class="hljs-string">"&lt;a href='http://host.domain' onclick='"</span></span> + CustomSanitize(Convert.FromBase64String(Request.Params[<span class="hljs-string"><span class="hljs-string">"parm"</span></span>])) + <span class="hljs-string"><span class="hljs-string">"'&gt;Click me&lt;/a&gt;"</span></span>)</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     この場合に構築された実行モデルのグラフィカル表現は、次のようになります（クリック可能）。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <div style="text-align:center;"> <a href=""><img src="https://habrastorage.org/getpro/habr/post_images/aa3/d47/7ba/aa3d477ba9048e3dd72e636fe4a4ce2b.png"></a> </div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     したがって、クエリパラメーター名とkey1の値は既にあり、行うべきことは、CustomSanitize式の最終値（Convert.FromBase64String（Request.Params ["parm]のように、Request.Params [" parm "]の値を見つけることだけです。 »]））XSSにつながる脆弱性の悪用を提供します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     そして、ここで、静的解析の従来の手段では対処できないという問題が発生します。  Convert.FromBase64Stringメソッドはライブラリメソッドであり、アナライザーのナレッジベースでConvert.ToBase64Stringの逆関数を持つと説明できます。この関数から、CustomSanitizeの結果は入力Convert.ToBase64Stringに送られると結論付けることができます。 しかし、ライブラリではないCustomSanitizeをどうするかは、どこにも記述されておらず、分析のこの段階では白黒のボックスですか？ さて、このメソッドのソースが利用可能であれば-この場合、その本体に「フォールスルー」し、上記と同様の方法でシンボリックコードの実行を継続できます。 しかし、ソースコードがない場合はどうでしょうか。 答えは前の文にありました。それについてしばらくの間忘れておくために、分析は静的であり、このメソッドをブラックボックスとして使用します。 以前に変換された式Convert.ToBase64String（CustomSanitize（Request.Params ["parm"]））があります。多くのXSSベクトルがあります（{`&lt;script&gt; alert（0）&lt;/ script&gt;`、 onmouseover = 'a [アラート]; a [0] .call（a [1]、1） `and`“ onmouseover =” a [アラート]; a [0] .apply（a [1]、[1]） `}）-それで、Request.Params [" parm "]シンボル変数をベクトルの値で指定し、結果の式を直接実行することで、この式の焦点を外さないのはなぜですか？ 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      CustomSanitizeが山かっこ文字のみを削除するとします。 次に、ファジングの結果として、3つの値を取得します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="javascript hljs">scriptalert(<span class="hljs-number"><span class="hljs-number">0</span></span>)/script <span class="hljs-string"><span class="hljs-string">'onmouseover='</span></span>a[alert];a[<span class="hljs-number"><span class="hljs-number">0</span></span>].call(a[<span class="hljs-number"><span class="hljs-number">1</span></span>],<span class="hljs-number"><span class="hljs-number">1</span></span>) <span class="hljs-string"><span class="hljs-string">"onmouseover="</span></span>a[alert];a[<span class="hljs-number"><span class="hljs-number">0</span></span>].apply(a[<span class="hljs-number"><span class="hljs-number">1</span></span>],[<span class="hljs-number"><span class="hljs-number">1</span></span>])</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     後者の2つは、攻撃ベクトルとして考慮する価値があります。 したがって、PVO引数として渡される完全な式がわかります。 文字変数Request.Params ["parm"]の値がベクトルの値で指定されている場合、その値が落ちる正確な場所を知っています。 これらの2つから、その使用が注入につながるベクトルを選択するために、他に何が必要ですか？  「 <a href="http://blog.vladimir.pe/2013/07/blog-post.html">安全なWebアプリケーションを開発し、同時にあなたの心を失わないようにするには</a> 」ウェビナーを注意深く聞いた人たちは、私たちは他に何も必要ないとすぐに答えます:) 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      T.O. このコードの分析の最終結果は、コンテキスト（PVO実行のコンテキストでシンボリック変数の値を定義する）の悪用です： 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="cs hljs">Request.Params[<span class="hljs-string"><span class="hljs-string">"name"</span></span>] = <span class="hljs-string"><span class="hljs-string">"adm"</span></span> Request.Params[<span class="hljs-string"><span class="hljs-string">"key1"</span></span>] = <span class="hljs-string"><span class="hljs-string">"validkey"</span></span> Request.Params[<span class="hljs-string"><span class="hljs-string">"parm"</span></span>] = <span class="hljs-string"><span class="hljs-string">"'onmouseover='a[alert];a[0].call(a[1],1)"</span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      HTTP（HTTPリクエストの実際のパラメータの要件を定義する）を悪用することは既に可能です： 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="cs hljs">GET http:<span class="hljs-comment"><span class="hljs-comment">//host.domain/path/to/document.aspx?name=adm&amp;key1=validkey&amp;parm=%27onmouseover%3D%27a%5Balert%5D%3Ba%5B0%5D.call%28a%5B1%5D%2C1%29 HTTP/1.1</span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      AIでは、興味がある場合は次のようになります（クリック可能）： 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <div style="text-align:center;"> <a href=""><img src="https://habrastorage.org/getpro/habr/post_images/7f2/f8d/9d7/7f2f8d9d7142c0ff5deea232011eba83.png" alt=" " title="コンソールバージョン"></a> </div><div style="text-align:center;"> <a href=""><img src="https://habrastorage.org/getpro/habr/post_images/939/b11/411/939b114115fc10f90f09e370c4a3541d.png" alt="GUI " title="GUIバージョン"></a> </div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     もちろん、厳しい現実では、すべてが少し複雑です。フィルタリング関数によって修正されたベクトルでさえ「シュート」することがあり、そのような関数の正規表現の出現とともに、定数値の代わりにそれらを記述する有限オートマトンを操作する必要が生じます。 クエリの入力パラメータが出力言語の任意の文法構造に固執する可能性があるという事実は、アイランド言語などのプロパティの解析および/またはヒューリスティックな推論の必要性につながります。 など しかし、これらはすでに個々の（そしておそらくもう少し科学的な）記事のトピックです。 私たちの仕事の一環として、これらの問題も正常に解決されたことにのみ注意してください。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2> エントリーポイントはどのようにして取得しますか？ </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     すべての例で、 "/ path / to / document.aspx"（つまり、Webアプリケーションへのエントリポイントへのルート）を取得するという質問を意図的に省略しました。 このタスクには普遍的なソリューションはなく、アナライザーのナレッジベースでさまざまなフレームワークの詳細を説明する必要があります。 たとえば、ASP.NET Webformの場合、エントリポイントはいわゆるハンドラメソッドです。  Webフォームコントロールのポストバック（.aspxファイルを解析し、対応する分離コードファイルにリンクする必要があります）。  ASP.NET MVCでは、ルートは、アプリケーションの初期化コードにRouteCollectionを直接入力することにより定義されます。 セクションurlMappings、urlrewritingnetなどがWebConfigに表示される可能性を忘れないでください。これは、アプリケーションへのHTTPリクエストのルーティングにも影響します。 また、開発者がカスタムルーティングロジックを実装する独自のHTTPハンドラーを定義することを妨げるものはありません。カスタムルーティングロジックの逆はアルゴリズム的に不溶性のタスクです。 この場合、Java / C＃の場合はすべてのpublicメソッドとprotectedメソッド、またはPHPの場合はすべての.phpファイルをエントリポイントとして考慮する以外に選択肢はありません。外部からは到達できないコードで誤検知をキャッチする可能性が高くなります。 しかし、私は個人的にそのような.NETアプリケーションをまだ見ていません。PHPフレームワークの既存の動物園は、刺激的ではありますが、エントリーポイントへのルートの取得に関連する部分を含むアナライザーのナレッジベースで非常に形式化されています。 既に明らかであるように、データベースのルーティングルールを記述するなどのエキゾチックな、潜在的なすべてのエントリポイントの前述の直接列挙を処理しています（ところで、一見思われるほど悪い結果は得られません）。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2> それだけです </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     私はまだこれらの質問に答えることができたことを願っています。 しかし、突然新しいものが発生した場合、または理解できない瞬間が残っている場合-彼らが言うように、ようこそ:) 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <hr><ol><li><a name="cite_note-1"></a>  <a href="https://habr.com/ru/company/pt/blog/224547/">↑</a>すぐに、この例は確かに合成であり、生きているシステムからの実際の例ではなく、平均的なお粗末なコードを分析する方法で起こりうる問題を示すことを意図していることを予約します。 読者の1人がコードフラグメントの独自のバージョンを提供したい場合は、分析プロセスを検討することができ、それはまったく問題ではありません。 </li><li><a name="cite_note-2"></a>  <a href="https://habr.com/ru/company/pt/blog/224547/">↑この</a>ような単純なコードであっても、分析プロセスの段階的な実行の説明は、均一な論理式の変換のマルチページチェーンをもたらすため、ここでは計算を行いません。 興味のある方は、アプローチのかなり詳細な説明と、記事の冒頭で述べたレポートの記録における個々の段階に慣れることができます。 </li></ol></div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+<section class="more-articles-navigation-panel js-more-articles-navigation-panel">
+<h4>More articles:</h4>
+<nav class="list-of-articles-container js-list-of-articles-container"><ul class="list-of-pages js-list-of-pages">
+<li><a href="../J224527/index.html">IntelがRockchipと提携しているのはなぜですか？</a></li>
+<li><a href="../J22453/index.html">Acid3を完了しましたか？</a></li>
+<li><a href="../J224537/index.html">Courseraは、オンデマンドモデルを実験しています</a></li>
+<li><a href="../J224541/index.html">Acronis Backup 11.5のGOST 28147-89暗号化</a></li>
+<li><a href="../J224545/index.html">iOS用のシンプルなゲームのレビューの有効性</a></li>
+<li><a href="../J224553/index.html">日本人はITインフラストラクチャを検討しています。 富士通ソリューションズ</a></li>
+<li><a href="../J224555/index.html">Battlefield 3の無料コピー</a></li>
+<li><a href="../J224571/index.html">スマートルームの基盤、またはArduinoがホステルに住む方法</a></li>
+<li><a href="../J224573/index.html">新しいフォーマット、PMの一歩</a></li>
+<li><a href="../J224585/index.html">別のJavaScript言語-ColaScript</a></li>
+</ul></nav>
+</section><br />
+<a href="../../allArticles.html"><strong>All Articles</strong></a>
+<script src="../../js/main.js"></script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript" >
+  (function (d, w, c) {
+      (w[c] = w[c] || []).push(function() {
+          try {
+              w.yaCounter70218013 = new Ya.Metrika({
+                  id:70218013,
+                  clickmap:true,
+                  trackLinks:true,
+                  accurateTrackBounce:true,
+                  webvisor:true
+              });
+          } catch(e) { }
+      });
+
+      var n = d.getElementsByTagName("script")[0],
+          s = d.createElement("script"),
+          f = function () { n.parentNode.insertBefore(s, n); };
+      s.type = "text/javascript";
+      s.async = true;
+      s.src = "https://mc.yandex.ru/metrika/watch.js";
+
+      if (w.opera == "[object Opera]") {
+          d.addEventListener("DOMContentLoaded", f, false);
+      } else { f(); }
+  })(document, window, "yandex_metrika_callbacks");
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/70218013" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+
+<!-- Google Analytics -->
+  <script>
+    window.ga = function () { ga.q.push(arguments) }; ga.q = []; ga.l = +new Date;
+    ga('create', 'G-FEDBM7F51Q', 'auto'); ga('send', 'pageview')
+  </script>
+  <script src="https://www.google-analytics.com/analytics.js" async defer></script>
+
+</section>
+
+<footer class="page-footer">
+  <div class="page-footer-legal-info-container page-footer-element">
+    <p>
+      Clever Geek | <span class="page-footer-legal-info-year js-page-footer-legal-info-year">2020</span>
+    </p>
+  </div>
+  <div class="page-footer-counters-container page-footer-element">
+    <div class="company-info js-company-info" itemscope="" itemtype="http://schema.org/Organization">
+      <span itemprop="name">Western Town Media (WTM)</span>
+      <div itemprop="address" itemscope="" itemtype="http://schema.org/PostalAddress">
+        <span itemprop="streetAddress">1968 Stoney Lonesome Road</span>
+        <br>
+        <span itemprop="postalCode">PA 18640</span>
+        <span itemprop="addressLocality">Pittston, USA</span>
+      </div>
+      <span itemprop="telephone">570-362-1316</span>
+    </div>
+    <script type="application/ld+json">
+      {
+        "@context": "http://schema.org",
+        "@type": "Organization",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Pittston, USA",
+          "postalCode": "PA 18640",
+          "streetAddress": "1968 Stoney Lonesome Road"
+        },
+        "name": "Western Town Media (WTM)",
+        "telephone": "570-362-1316"
+      }
+    </script>
+  </div>
+</footer>
+  
+</body>
+
+</html>

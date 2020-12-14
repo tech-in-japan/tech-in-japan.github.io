@@ -1,0 +1,1119 @@
+<!doctype html>
+<html class="no-js" lang="en">
+
+<head>
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-FEDBM7F51Q"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-FEDBM7F51Q');
+  </script>
+
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <title>❌ 🌿 👴🏾 GPU BFSの実装 👸🏼 👨🏽‍🏫 🥋</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <meta name="description" content="注釈  
+  
+ この記事では、グラフィックアクセラレータを使用したグラフでの幅検索-BFSアルゴリズムを効率的に並列化する方法を説明します。 この記事では、結果のアルゴリズムの詳細な分析を提供します。 計算は、単一のGPU GTX Titanアーキテクチャケプラーで実行されました。 
+  
+ 
+ ...">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml"/>
+
+  <link rel="stylesheet" href="../../css/main.css">
+
+  <link href="https://fonts.googleapis.com/css?family=Quicksand&display=swap" rel="stylesheet">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+  <script>document.write('<script src="https://pagea' + 'd2.googles' + 'yndication.com/pagea' + 'd/js/a' + 'dsby' + 'google.js"><\/script>')</script>
+  <script>
+        var superSpecialObject = {};
+        superSpecialObject['google_a' + 'd_client'] = 'ca-p' + 'ub-6974184241884155';
+        superSpecialObject['enable_page_level_a' + 'ds'] = true;
+       (window['a' + 'dsbygoogle'] = window['a' + 'dsbygoogle'] || []).push(superSpecialObject);
+  </script>
+</head>
+
+<body>
+  <!--[if lte IE 9]>
+    <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience and security.</p>
+  <![endif]-->
+  <header class="page-header js-page-header">
+    <a class="page-header-logo-container" href="https://tech-in-japan.github.io/index.html"></a>
+    <div class="page-header-text">Clever Geek Handbook</div>
+  </header>
+  <section class="page js-page"><h1>GPU BFSの実装</h1><div class="post__text post__text-html js-mediator-article" id="post-content-body"><h2> 注釈 </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     この記事では、グラフィックアクセラレータを使用したグラフでの幅検索-BFSアルゴリズムを効率的に並列化する方法を説明します。 この記事では、結果のアルゴリズムの詳細な分析を提供します。 計算は、単一のGPU GTX Titanアーキテクチャケプラーで実行されました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2> はじめに </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     最近、グラフィックアクセラレータ（GPU）は、非グラフィックコンピューティングでますます重要な役割を果たしています。 それらの使用の必要性は、それらの比較的高い生産性と低コストによるものです。 ご存じのように、GPUでは、構造グリッドの問題は十分に解決されており、並列処理は簡単に区別できます。 ただし、大容量を必要とし、非構造グリッドを使用するタスクがあります。 このような問題の例は、単一の最短ソースパス問題（SSSP）です。これは、重み付きグラフ内の特定の頂点から他のすべての頂点までの最短パスを見つけるタスクです。  <a href="http://habrahabr.ru/post/214515/">この</a>記事では、この問題の解決策を検討しました。 非構造グリッドの問題の2番目の例は、幅優先検索（BFS）タスク-無向グラフでの幅優先検索です。 このタスクは、多くのグラフアルゴリズムの主要なタスクです。 また、最短経路を見つけるよりも少し簡単です。 現時点では、BFSアルゴリズムが<a href="http://www.graph500.org/">Graph500</a>レーティングのメインテストとして使用されています。 次に、BFS問題でSSSP問題を解決するためのアイデアをどのように使用できるかを調べます。  Nvidia GPUのアーキテクチャと言及されているアルゴリズムについてはすでに多くのことが書かれているため、この記事ではこれについては追加しません。 また、ワープ、キューダブロック、SMX、およびCUDAに関連するその他の基本的な概念が読者になじみのあるものであることを願っています。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <a name="habracut"></a>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2> 使用されるデータの形式 </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      SSSPタスクと同様に、1つのSMXの負荷を増やし、GPUのグローバルメモリ内の同一データの量を減らすために、同じ変換を使用します。 主な違いは、BFSアルゴリズムはグラフの重みを必要としないことです。 また、最短距離ではなく、この頂点が位置するレベルの番号を保存する必要があることにも注意してください。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/getpro/habr/post_images/e55/ee7/bd0/e55ee7bd0c9768636dc91475728d2160.jpg" alt="画像">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     テスト実行後、平均接続度が32のRMATグラフのレベル数は10を超えないことがわかりました。したがって、これらの値を格納するにはunsigned charで十分です。 したがって、レベルの配列は、距離の配列よりも8倍少ないスペースを占有します。これは、ケプラーアーキテクチャのキャッシュサイズが1.5 MBしかないため、非常に重要です。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2>  CPUでのアルゴリズムの実装 </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      CPUでは、ネイティブバージョンの幅トラバーサルアルゴリズム、つまり、まだ見られないピークのキューの作成が実装されました。 実装CPUコードは次のとおりです。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre><code class="cpp hljs"><span class="hljs-built_in"><span class="hljs-built_in">queue</span></span>&lt;<span class="hljs-keyword"><span class="hljs-keyword">vertex_id_t</span></span>&gt; q; <span class="hljs-keyword"><span class="hljs-keyword">bool</span></span> *used = <span class="hljs-keyword"><span class="hljs-keyword">new</span></span> <span class="hljs-keyword"><span class="hljs-keyword">bool</span></span>[G-&gt;n]; <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> (<span class="hljs-keyword"><span class="hljs-keyword">unsigned</span></span> i = <span class="hljs-number"><span class="hljs-number">0</span></span>; i &lt; G-&gt;n; ++i) used[i] = <span class="hljs-literal"><span class="hljs-literal">false</span></span>; used[root] = <span class="hljs-literal"><span class="hljs-literal">true</span></span>; q.push(root); dist[root] = <span class="hljs-number"><span class="hljs-number">0</span></span>; <span class="hljs-keyword"><span class="hljs-keyword">while</span></span> (!q.empty()) { <span class="hljs-keyword"><span class="hljs-keyword">vertex_id_t</span></span> nextV = q.front(); q.pop(); <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> (<span class="hljs-keyword"><span class="hljs-keyword">unsigned</span></span> k = G-&gt;rowsIndices[nextV]; k &lt; G-&gt;rowsIndices[nextV + <span class="hljs-number"><span class="hljs-number">1</span></span>]; ++k) { <span class="hljs-keyword"><span class="hljs-keyword">if</span></span> (used[G-&gt;endV[k]] == <span class="hljs-literal"><span class="hljs-literal">false</span></span>) { used[G-&gt;endV[k]] = <span class="hljs-literal"><span class="hljs-literal">true</span></span>; q.push(G-&gt;endV[k]); dist[G-&gt;endV[k]] = dist[nextV] + <span class="hljs-number"><span class="hljs-number">1</span></span>; } } }</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     このコードは非常に単純であり、おそらく最適ではありません。  GPUでのアルゴリズムの正しい動作を検証するために使用されました。  CPUに最適なアルゴリズムを書き込むという目標はなかったため、CPUのパフォーマンスはこのアルゴリズムによって取得されます。 現時点では、多くの最適なCPU実装があり、それらは簡単に見つけることができます。  BFSアルゴリズムを実装するための他の多くのアプローチとアイデアも提案されています。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2> アルゴリズムのGPU実装 </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     実装は、同じFord-Bellmanアルゴリズムに基づいており、SSSP問題のコアが考慮されました。  BFSのコアコンピューティングコアは次のようになります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="cpp hljs"><span class="hljs-keyword"><span class="hljs-keyword">if</span></span>(k &lt; maxV) { <span class="hljs-keyword"><span class="hljs-keyword">unsigned</span></span> en = endV[k]; <span class="hljs-keyword"><span class="hljs-keyword">unsigned</span></span> st = startV[k]; <span class="hljs-keyword"><span class="hljs-keyword">if</span></span>(levels[st] == iter) { <span class="hljs-keyword"><span class="hljs-keyword">if</span></span>(levels[en] &gt; iter) { levels_NR[en] = iter + <span class="hljs-number"><span class="hljs-number">1</span></span>; modif[<span class="hljs-number"><span class="hljs-number">0</span></span>] = iter; } } <span class="hljs-keyword"><span class="hljs-keyword">else</span></span> <span class="hljs-keyword"><span class="hljs-keyword">if</span></span>(levels[en] == iter) { <span class="hljs-keyword"><span class="hljs-keyword">if</span></span>(levels[st] &gt; iter) { levels_NR[st] = iter + <span class="hljs-number"><span class="hljs-number">1</span></span>; modif[<span class="hljs-number"><span class="hljs-number">0</span></span>] = iter; } } }</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     アルゴリズムの考え方は次のとおりです。 最初に、選択したタイプの最大値（unsigned charの場合は255）をレベルの配列に入力します。 現在の反復番号をカーネル-iterに渡します。 次に、すべてのエッジを調べて、開始頂点または終了頂点が現在の親であるかどうか、つまりiterレベルに属しているかどうかを確認する必要があります。 そうである場合、次の反復で親のリストにこの頂点を「含める」ために、表示されているアークの反対側の頂点にもう1つの値をマークする必要があります。  SSSPの場合と同様に、modif変数は残り、グラフのマークアップを継続する必要があることを示します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     このコードには、SSSPタスクに適用された最適化が既に含まれています。levels配列にconst __restrictを使用し、書き込みに必要な同じメモリ位置を指す別のlevels_NRリンクを使用します。 キャッシュ内のデータのローカリゼーションを改善するための2番目の順列形式の最適化も使用されました。  BFSアルゴリズムの場合、最適なラインキャッシュの長さは、グラフのサイズに関係なく、1024KB、またはレベルの配列の要素に対して約1mln（1024 * 1024）です。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2> 結果の分析 </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     テストには、非指向性の合成RMATグラフを使用しました。これは、ソーシャルネットワークとインターネットからの実際のグラフをうまくモデル化したものです。 グラフの平均接続性は32で、頂点の数は2の累乗です。 次の表に、テストされたグラフを示します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <table><tbody><tr><td> 頂点の数2 ^ N </td><td> 頂点の数 </td><td> アークの数 </td><td> レベル配列のサイズ（MB） </td><td> リブ配列サイズMB </td></tr><tr><td>  14 </td><td>  16 384 </td><td>  524,288 </td><td>  &gt; 0.125 </td><td>  2 </td></tr><tr><td>  15 </td><td>  32,768 </td><td>  1,048,576 </td><td>  &gt; 0.125 </td><td>  4 </td></tr><tr><td>  16 </td><td>  65,536 </td><td>  2,097 152 </td><td>  &gt; 0.125 </td><td>  8 </td></tr><tr><td>  17 </td><td>  131 072 </td><td>  4 194 304 </td><td>  0.125 </td><td>  16 </td></tr><tr><td>  18 </td><td>  262 144 </td><td>  8 388 608 </td><td>  0.250 </td><td>  32 </td></tr><tr><td>  19 </td><td>  524,288 </td><td>  16 777 216 </td><td>  0.5 </td><td>  64 </td></tr><tr><td>  20 </td><td>  1,048,576 </td><td>  33554432 </td><td>  1 </td><td>  128 </td></tr><tr><td>  21 </td><td>  2,097 152 </td><td>  67108864 </td><td>  2 </td><td>  256 </td></tr><tr><td>  22 </td><td>  4 194 304 </td><td>  134 217 728 </td><td>  4 </td><td>  512 </td></tr><tr><td>  23 </td><td>  8 388 608 </td><td>  268 435 456 </td><td>  8 </td><td>  1024 </td></tr><tr><td>  24 </td><td>  16 777 216 </td><td>  536 870 912 </td><td>  16 </td><td>  2048 </td></tr></tbody></table> レベル値を保存するために最小のデータ型を使用するため、頂点数が2 <sup>20の</sup>グラフでは、レベル配列をキャッシュするために1 MBが必要ですが、SSSPタスクの同じグラフでは、8 MBが必要です。 テストは、14個のSMXコアと2688個のCUDAコアを備えたNVidia GTX Titan GPU、および周波数3.4GHzおよび8MBキャッシュを備えた第3世代Intelコアi7プロセッサーで実行されました。  CPUのパフォーマンスを比較するために、幅優先検索アルゴリズムのネイティブ実装が使用されました。  CPUで作業する前のデータ置換の形での最適化は行われませんでした。 時間ではなく、パフォーマンスインジケータは、1秒あたりに処理されるアークの数です。 この場合、取得した時間をグラフ内のアークの数で割る必要があります。 最終結果として、平均32ポイントが取得されました。 最大値と最小値も計算されました。 コンパイルには、13番目のバージョンのIntelコンパイラと、フラグ–O3 –arch = sm_35を使用したNVCC CUDA 5.5が使用されました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      GPUおよびCPUのさまざまなオプションの平均パフォーマンスのグラフは次のとおりです。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/getpro/habr/post_images/96d/5ce/4dd/96d5ce4dd96758e38c79a5aae248b13f.jpg" alt="画像">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     このグラフは、次のアルゴリズムの平均パフォーマンス曲線を示しています。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li> キャッシュ&amp;&amp;制限-GPUアルゴリズムとすべての最適化（1） </li><li> キャッシュオフ-キャッシュを改善するために順列を最適化しないGPUアルゴリズム（2） </li><li> 制限オフ-テクスチャキャッシュの最適化なしのGPUアルゴリズム（3） </li><li> キャッシュ&amp;&amp;制限オフ-最適化なしの基本的なGPUアルゴリズム（4） </li><li>  CPU-CPUの基本アルゴリズム </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     最初に目を引くのは、アルゴリズム（1）-（2）および（3）-（4）の同一の動作です。 上記のように、これは、最大2 <sup>20の</sup>頂点数を持つグラフのレベル配列がL2キャッシュに配置されるという事実によるものです。 したがって、アルゴリズム（1）および（2）を考慮し、（3）および（4）の場合にテクスチャキャッシュを使用しない場合、アークの順列を行うことはできません。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     さらに、レベルの配列がL2キャッシュに収まらない場合、const __restrictが使用されているにもかかわらず、順列を無効にするとパフォーマンスが大幅に低下することに気付くかもしれません。 これは主に、levels配列へのランダムアクセスが原因です。  const __restirictオプションが無効になっている場合にも、同様の画像が観察されます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     最適なアルゴリズムの15-16-17度の領域の非平滑グラフは、別の小さな最適化の結果です。1つのアークの2つの頂点を符号なしint型の1つの変数にパッキングします。 最大頂点数は16ビットで、unsigned intは32ビットであるため、エッジデータを事前に1つのunsigned intにパックし、グローバルGPUメモリからデータの半分を読み取りながらカーネルでアンパックできます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     その結果、3.6 GTEPSの平均パフォーマンスを達成することができました。 頂点の数が2 16-2 <sup>23の</sup>グラフでは、ほぼ平均ピークパフォーマンスが達成されます。これは、このアーキテクチャに適しています。 最大パフォーマンスは、頂点数2 19-4,2 GTEPSのグラフで得られました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      CPUのネイティブ実装と比較した結果の加速は、非常に曖昧であることが判明しました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/getpro/habr/post_images/cad/584/6c7/cad5846c77dbc5b2f0d264ccd22041fc.jpg" alt="画像">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     一般的な傾向が見えます-加速が徐々に増加します。 これは、非効率的な実装とCPUキャッシュのサイズの制限が原因である可能性があります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2> 実装されたカーネルの詳細な分析 </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     結論として、GPUリソ​​ースの使用に関して、このアプローチがどれほど効果的かを示したいと思います。 このセクションは、興味がある場合にのみ表示されます。おそらく、将来、自分のアルゴリズムをこの記事で説明するものと比較したい人のために表示されます。  NVVPプロファイラーが2つのグラフ-2 <sup>19</sup>と2 <sup>22</sup>について表示するすべてを詳細に検討してみましょう。 最初のグラフではレベル配列をL2キャッシュに完全に配置しますが、2番目のグラフでは配置しないため、このようなグラフを選択しました。 まず、一般的な情報を考慮します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <table><tbody><tr><td> スケール </td><td> 実行された反復の数 </td><td> 共有メモリ使用量 </td><td> 使用されるレジスタの数 </td><td> 合計カーネルカウント時間（ミリ秒） </td><td> 配列のコピー時間（ミリ秒） </td></tr><tr><td>  2 <sup>19</sup> </td><td>  7 </td><td> いや </td><td>  12 </td><td>  4,512 </td><td>  10.97 </td></tr><tr><td>  2 <sup>22</sup> </td><td>  8 </td><td> いや </td><td>  12 </td><td>  41.1 </td><td>  86.66 </td></tr></tbody></table>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     カウントの開始前にGPUで頂点配列をコピーし、終了後にCPUで結果をコピーすることを考慮しました。 この表から、コピーにはアカウント全体の約2倍の時間がかかることがわかります。 次に、各グラフの反復を検討します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h5> カウント2 <sup>19</sup> </h5>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <table><tbody><tr><td> 反復 </td><td> ミリ秒単位の時間 </td><td>  GL Eff、％ </td><td>  GS Eff、％ </td><td>  WE Eff、％ </td><td>  NP WE Eff、％ </td><td> 占有率、％ </td><td>  L2読み取り、GB / s </td><td>  L2書き込み、GB / s </td><td> グローバル読み取り、GB / s </td><td> グローバル書き込み、GB / s </td></tr><tr><td>  1 </td><td>  0.577 </td><td>  100 </td><td>  10 </td><td>  100 </td><td>  94.6 </td><td>  89.3 </td><td>  551 </td><td>  0.0002 </td><td>  110 </td><td>  0.0002 </td></tr><tr><td>  2 </td><td>  0.572 </td><td>  100 </td><td>  8.1 </td><td>  99.9 </td><td>  94.5 </td><td>  89.2 </td><td>  551 </td><td>  0.0986 </td><td>  110 </td><td>  0.0498 </td></tr><tr><td>  3 </td><td>  0.58 </td><td>  100 </td><td>  11.9 </td><td>  93.5 </td><td>  88.5 </td><td>  88.1 </td><td>  545 </td><td>  14 </td><td>  109 </td><td>  6 </td></tr><tr><td>  4 </td><td>  1.062 </td><td>  100 </td><td>  24.3 </td><td>  85.1 </td><td>  77.7 </td><td>  78.2 </td><td>  289 </td><td>  71 </td><td>  58 </td><td>  51 </td></tr><tr><td>  5 </td><td>  0.576 </td><td>  100 </td><td>  9.5 </td><td>  91.1 </td><td>  86.8 </td><td>  88.8 </td><td>  549 </td><td>  1.37 </td><td>  110 </td><td>  0.5576 </td></tr><tr><td>  6 </td><td>  0.576 </td><td>  100 </td><td>  7.8 </td><td>  99.6 </td><td>  94.2 </td><td>  89.2 </td><td>  551 </td><td>  0.0017 </td><td>  110 </td><td>  0.0010 </td></tr><tr><td>  7 </td><td>  0.572 </td><td>  100 </td><td>  0 </td><td>  100 </td><td>  94.6 </td><td>  89.3 </td><td>  551 </td><td>  0.000 </td><td>  110 </td><td>  0.000 </td></tr></tbody></table>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     デコード： 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li>  GL Eff-グローバルな負荷効率 </li><li>  GS Eff-グローバルストアの効率 </li><li>  WE Eff-ワープ実行効率 </li><li>  NP WE Eff-非予測のワープ実行効率 </li><li> 占有-実際にアクティブなワープの数/ SMXのワープの最大数 </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     この表は、3および4回の反復で最大数の頂点が処理されることを示しています。 このため、4回目の反復で、L2帯域幅とグローバルGPUメモリの使用の減少が見られます。 アルゴリズムの仕様に従って、最後の反復でエントリが発生しないことに注意してください。 グラフのマークアップの完全性を判断する必要があります。 ワープの実行効率は、最も「ロードされた」反復で93〜100％〜85％です。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     比較のために、以下の表は2 <sup>22の</sup>頂点を持つグラフで、そのレベルの配列のサイズはGPUのL2キャッシュに完全には収まりません。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h5> カウント2 <sup>22</sup> </h5>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <table><tbody><tr><td> 反復 </td><td> ミリ秒単位の時間 </td><td>  GL Eff、％ </td><td>  GS Eff、％ </td><td>  WE Eff、％ </td><td>  NP WE Eff、％ </td><td> 占有率、％ </td><td>  L2読み取り、GB / s </td><td>  L2書き込み、GB / s </td><td> グローバル読み取り、GB / s </td><td> グローバル書き込み、GB / s </td></tr><tr><td>  1 </td><td>  4.66 </td><td>  100 </td><td>  10,4 </td><td>  100 </td><td>  94.6 </td><td>  89.1 </td><td>  556 </td><td>  0.0001 </td><td>  113 </td><td>  0.00001 </td></tr><tr><td>  2 </td><td>  4.60 </td><td>  100 </td><td>  11.8 </td><td>  100 </td><td>  94.6 </td><td>  89.1 </td><td>  556 </td><td>  0.0014 </td><td>  113.2 </td><td>  0.0011 </td></tr><tr><td>  3 </td><td>  4.61 </td><td>  100 </td><td>  11.2 </td><td>  99.8 </td><td>  94.4 </td><td>  89.1 </td><td>  555 </td><td>  0.5547 </td><td>  117 </td><td>  0.3750 </td></tr><tr><td>  4 </td><td>  6,405 </td><td>  100 </td><td>  17.8 </td><td>  83.7 </td><td>  79.1 </td><td>  82.2 </td><td>  399 </td><td>  46 </td><td>  81 </td><td>  28 </td></tr><tr><td>  5 </td><td>  7,016 </td><td>  100 </td><td>  15.8 </td><td>  83.6 </td><td>  74.1 </td><td>  79.8 </td><td>  364 </td><td>  34 </td><td>  74 </td><td>  19 </td></tr><tr><td>  6 </td><td>  4.62 </td><td>  100 </td><td>  7.9 </td><td>  90.2 </td><td>  85.5 </td><td>  89.1 </td><td>  555 </td><td>  0.0967 </td><td>  117 </td><td>  0.0469 </td></tr><tr><td>  7 </td><td>  4.60 </td><td>  100 </td><td>  7.8 </td><td>  100 </td><td>  94.6 </td><td>  89 </td><td>  556 </td><td>  0.0002 </td><td>  113 </td><td>  0.0001 </td></tr><tr><td>  8 </td><td>  4.60 </td><td>  100 </td><td>  0 </td><td>  100 </td><td>  94.6 </td><td>  89.1 </td><td>  556 </td><td>  0.000 </td><td>  113 </td><td>  0.000 </td></tr></tbody></table>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     デコードは上記のとおりです。 このグラフでは、2 <sup>19</sup>とほぼ同じ写真が観察されます。 ピークは4〜5回繰り返されます。  NVVPプロファイラーによると、560 GB / s L2キャッシュのスループットは高く（低、中、高、最大あり）、117 GB / sのグローバルメモリ容量は平均です（低、中、高、最大あり）。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2> おわりに </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     完了した作業の結果として、幅優先探索アルゴリズムが実装され、RMATグラフで最適化されました。頂点接続の平均度は32です。4.2GTEPSのピークパフォーマンスと3.6 GTEPSの平均が達成されました。 ご存知のように、パフォーマンスだけでなく、エネルギー効率も重要です。  Graph500の評価に加えて、エネルギー効率を示すGreen Graph500の評価があります。  BlueGene / Q、Power BQC 16C 1.60 GHz（1048576コア、65536ノード、15363 GTEPS）、2014年3月のGraph500パフォーマンス評価で1位。 このようなシステムの消費電力は340kWです（上位500の定格から取得）。  BlueGene / Qで得られたGTEPS / kWの結果の効率は45です。実装したアルゴリズムの場合、約18であることがわかります（計算に合計電力200 W、平均パフォーマンス3.6 GTEPSを使用しました。 GPU上では実現されません）。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Graph500のランキングには、同様のシステムXeon E5-2650 v2、GeForce GTX TITANがあり、グラフ2 <sup>25</sup>で17 GTEPSのパフォーマンスを得たことにも注意してください。 残念ながら、どのグラフが使用されたかに関する情報は提供されていません。  2014年3月現在、このシステムはランキングで58の位置にあります。 </div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+<section class="more-articles-navigation-panel js-more-articles-navigation-panel">
+<h4>More articles:</h4>
+<nav class="list-of-articles-container js-list-of-articles-container"><ul class="list-of-pages js-list-of-pages">
+<li><a href="../J214937/index.html">Javascript UPNP / DLNAサーバー</a></li>
+<li><a href="../J21494/index.html">Microsoft、Google、Yahoo！の財務比較について （第1章半-回答）</a></li>
+<li><a href="../J214943/index.html">小学校OS：バグを修正するためのお金を得る</a></li>
+<li><a href="../J214945/index.html">フォーム内のアドレス補完のためのサービスの比較</a></li>
+<li><a href="../J214949/index.html">GitHubが開発者プログラムを開始</a></li>
+<li><a href="../J214955/index.html">DirectXアーケード用のボット。 部品番号1：連絡する</a></li>
+<li><a href="../J214959/index.html">Getty Images photobankは、3500万枚の写真への無料アクセスを開設しました</a></li>
+<li><a href="../J21496/index.html">ECMAScript 4の実装</a></li>
+<li><a href="../J214961/index.html">中本S-「私は中本ドリアンではない」</a></li>
+<li><a href="../J214963/index.html">IML TODO</a></li>
+</ul></nav>
+</section><br />
+<a href="../../allArticles.html"><strong>All Articles</strong></a>
+<script src="../../js/main.js"></script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript" >
+  (function (d, w, c) {
+      (w[c] = w[c] || []).push(function() {
+          try {
+              w.yaCounter70218013 = new Ya.Metrika({
+                  id:70218013,
+                  clickmap:true,
+                  trackLinks:true,
+                  accurateTrackBounce:true,
+                  webvisor:true
+              });
+          } catch(e) { }
+      });
+
+      var n = d.getElementsByTagName("script")[0],
+          s = d.createElement("script"),
+          f = function () { n.parentNode.insertBefore(s, n); };
+      s.type = "text/javascript";
+      s.async = true;
+      s.src = "https://mc.yandex.ru/metrika/watch.js";
+
+      if (w.opera == "[object Opera]") {
+          d.addEventListener("DOMContentLoaded", f, false);
+      } else { f(); }
+  })(document, window, "yandex_metrika_callbacks");
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/70218013" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+
+<!-- Google Analytics -->
+  <script>
+    window.ga = function () { ga.q.push(arguments) }; ga.q = []; ga.l = +new Date;
+    ga('create', 'G-FEDBM7F51Q', 'auto'); ga('send', 'pageview')
+  </script>
+  <script src="https://www.google-analytics.com/analytics.js" async defer></script>
+
+</section>
+
+<footer class="page-footer">
+  <div class="page-footer-legal-info-container page-footer-element">
+    <p>
+      Clever Geek | <span class="page-footer-legal-info-year js-page-footer-legal-info-year">2020</span>
+    </p>
+  </div>
+  <div class="page-footer-counters-container page-footer-element">
+    <div class="company-info js-company-info" itemscope="" itemtype="http://schema.org/Organization">
+      <span itemprop="name">Western Town Media (WTM)</span>
+      <div itemprop="address" itemscope="" itemtype="http://schema.org/PostalAddress">
+        <span itemprop="streetAddress">1968 Stoney Lonesome Road</span>
+        <br>
+        <span itemprop="postalCode">PA 18640</span>
+        <span itemprop="addressLocality">Pittston, USA</span>
+      </div>
+      <span itemprop="telephone">570-362-1316</span>
+    </div>
+    <script type="application/ld+json">
+      {
+        "@context": "http://schema.org",
+        "@type": "Organization",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Pittston, USA",
+          "postalCode": "PA 18640",
+          "streetAddress": "1968 Stoney Lonesome Road"
+        },
+        "name": "Western Town Media (WTM)",
+        "telephone": "570-362-1316"
+      }
+    </script>
+  </div>
+</footer>
+  
+</body>
+
+</html>
