@@ -1,0 +1,741 @@
+<!doctype html>
+<html class="no-js" lang="en">
+
+<head>
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-FEDBM7F51Q"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-FEDBM7F51Q');
+  </script>
+
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <title>👰🏽 ⛳️ ◾️ 効率的なクラウドキュー管理（Azureキュー） 🧑🏾‍🤝‍🧑🏻 💹 🤞🏿</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <meta name="description" content="「AtContent.comサービスの内部構造とアーキテクチャ」シリーズのこの4番目の記事では、Azureサービス（ワーカーロール）のインスタンスを使用したジョブのバックグラウンド処理に精通することを提案します。 
+  
+ 
+  
+ インスタンス間のプライマリ通信チャネルとしてAzureキューを使用...">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml"/>
+
+  <link rel="stylesheet" href="../../css/main.css">
+
+  <link href="https://fonts.googleapis.com/css?family=Quicksand&display=swap" rel="stylesheet">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+  <script>document.write('<script src="https://pagea' + 'd2.googles' + 'yndication.com/pagea' + 'd/js/a' + 'dsby' + 'google.js"><\/script>')</script>
+  <script>
+        var superSpecialObject = {};
+        superSpecialObject['google_a' + 'd_client'] = 'ca-p' + 'ub-6974184241884155';
+        superSpecialObject['enable_page_level_a' + 'ds'] = true;
+       (window['a' + 'dsbygoogle'] = window['a' + 'dsbygoogle'] || []).push(superSpecialObject);
+  </script>
+</head>
+
+<body>
+  <!--[if lte IE 9]>
+    <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience and security.</p>
+  <![endif]-->
+  <header class="page-header js-page-header">
+    <a class="page-header-logo-container" href="https://tech-in-japan.github.io/index.html"></a>
+    <div class="page-header-text">Clever Geek Handbook</div>
+  </header>
+  <section class="page js-page"><h1>効率的なクラウドキュー管理（Azureキュー）</h1><div class="post__text post__text-html js-mediator-article" id="post-content-body">  「AtContent.comサービスの内部構造とアーキテクチャ」シリーズのこの4番目の記事では、Azureサービス（ワーカーロール）のインスタンスを使用したジョブのバックグラウンド処理に精通することを提案します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     インスタンス間のプライマリ通信チャネルとしてAzureキューを使用することをお勧めします。 ただし、このチャネルのみを使用すると、サービスインスタンスを最も効率的に使用できません。 したがって、この記事では、どのように学習します 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li> インスタンスにジョブを送信してから処理を開始するまでの遅延を最小限に抑える </li><li>  Azure Queueへのトランザクション数を最小限に抑える </li><li> ジョブ処理の効率を高める </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/getpro/habr/post_images/aaf/ac2/afd/aafac2afdab098937f26b7285a34b8da.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <a name="habracut"></a>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     図からわかるように、Azureの標準SDKツールは、キュー（Azure Queue）のみを介した相互作用のシナリオを想定しています。 同時に、Azureサービスインスタンスは、アプリケーションインスタンスがキューを介してジョブを送信するポイントを認識しません。 したがって、彼は定期的にキュー内のジョブをチェックする必要があり、これによりいくつかの問題と不便が生じます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     問題の1つは、タスクの処理の遅延です。 次の理由で発生します。 サービスインスタンスは、キュー内のジョブを定期的にチェックする必要があります。 さらに、このようなチェックを頻繁に行うと、Azure Queueに対して多数のトランザクションが生成されます。 そのようなタスクが同時にキューに入れられることがめったにない場合、多数の「アイドル」トランザクションが発生します。 キュー内のジョブの可用性をあまり頻繁にチェックしない場合、そのようなチェックの間隔は長くなります。 したがって、サービスインスタンスによってチェックされた直後にタスクがキューに入る場合、次の間隔の開始時にのみ処理されます。 これにより、メッセージ処理に大幅な遅延が生じます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     もう1つの問題は、アイドルトランザクションです。 つまり、キューにメッセージがなくても、サービスインスタンスはこれらのメッセージの存在を確認するために、引き続きメッセージに接続する必要があります。 これによりオーバーヘッドが発生します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      SDKが提供する標準的なアプローチでは、トランザクションコストとジョブ処理の遅延量のいずれかを選択する必要があります。 一部のシナリオでは、処理時間はわずかであり、タスク自体はかなり定期的に到着します。 この場合、SDKからの推奨事項に従って、キューから定期的に選択することでタスクを処理できます。 しかし、タスクが不規則に入ってきた場合、急増と停滞が生じる可能性があり、標準的な方法でタスクを処理する効率が低下します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     インスタンスとロール間のメッセージングメカニズムを使用して、これらの問題を解決できます。 シリーズの以前の記事（ <a href="http://habrahabr.ru/post/140461/">http://habrahabr.ru/post/140461/</a> ）で説明されていました。 このメカニズムに関するいくつかの言葉。 これにより、あるインスタンスから別のインスタンスに、またはロールのすべてのインスタンスにメッセージを転送できます。 これを使用すると、インスタンスでさまざまなハンドラーを実行できます。これにより、たとえば、インスタンスの状態を同期できます。 タスクに適用されると、タスクをキューに追加した直後にキューの処理を開始できます。 同時に、キュー内のジョブの可用性を常に確認する必要はなく、「アイドル」トランザクションが排除されます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/getpro/habr/post_images/927/baa/a86/927baaa86ea916563a9662fb2fe403be.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     このメカニズムをより詳細に検討すると、次のことがわかります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/getpro/habr/post_images/43e/53b/e46/43e53be4628c336a0e0a6c92e784c590.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Azureアプリケーションインスタンスは、タスクをAzureキューに追加し、Azureサービスインスタンスにメッセージを送信します。 次に、メッセージはハンドラーをアクティブにします。 ハンドラーのその他のアクションは、設定によって異なります。 設定にキュー処理がすでに実行されているレコードがある場合、それを再起動しても意味がありません。 それ以外の場合、ハンドラーは処理を開始し、対応するレコードを設定に追加します。 彼は進行中のキューからタスクを選択し、終了するまで続行します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     ハンドラー設定はさまざまな方法で保存できます。 たとえば、インスタンスのメモリ（最も信頼性の高い方法ではありません）、インスタンスのストレージ、またはブロブのストレージ（Azure Blob Storage）。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     キューを処理するためのCPlaseライブラリには、キューハンドラーを作成できる特別なQueueクラスがあります。 このため、ライブラリにはIWorkerQueueHandlerインターフェイスとその拡張機能もあり、キューを操作するのに便利です。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre><code class="cs hljs"><span class="hljs-keyword"><span class="hljs-keyword">public</span></span> <span class="hljs-keyword"><span class="hljs-keyword">interface</span></span> <span class="hljs-title"><span class="hljs-title">IWorkerQueueHandler</span></span> { <span class="hljs-function"><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">bool</span></span></span><span class="hljs-function"> </span><span class="hljs-title"><span class="hljs-function"><span class="hljs-title">HandleQueue</span></span></span><span class="hljs-function">(</span><span class="hljs-params"><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">string</span></span></span></span><span class="hljs-function"><span class="hljs-params"> Message</span></span></span><span class="hljs-function">)</span></span>; } <span class="hljs-keyword"><span class="hljs-keyword">public</span></span> <span class="hljs-keyword"><span class="hljs-keyword">static</span></span> <span class="hljs-keyword"><span class="hljs-keyword">class</span></span> <span class="hljs-title"><span class="hljs-title">WorkerQueueHandlerExtensions</span></span> { <span class="hljs-function"><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">private</span></span></span><span class="hljs-function"> </span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">static</span></span></span><span class="hljs-function"> </span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">string</span></span></span><span class="hljs-function"> </span><span class="hljs-title"><span class="hljs-function"><span class="hljs-title">CleanUpQueueName</span></span></span><span class="hljs-function">(</span><span class="hljs-params"><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">string</span></span></span></span><span class="hljs-function"><span class="hljs-params"> DirtyQueueName</span></span></span><span class="hljs-function">)</span></span> { <span class="hljs-keyword"><span class="hljs-keyword">return</span></span> DirtyQueueName.Substring(<span class="hljs-number"><span class="hljs-number">0</span></span>, DirtyQueueName.IndexOf(<span class="hljs-string"><span class="hljs-string">","</span></span>)).ToLowerInvariant().Replace(<span class="hljs-string"><span class="hljs-string">"."</span></span>, <span class="hljs-string"><span class="hljs-string">"-"</span></span>); } <span class="hljs-function"><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">public</span></span></span><span class="hljs-function"> </span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">static</span></span></span><span class="hljs-function"> </span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">string</span></span></span><span class="hljs-function"> </span><span class="hljs-title"><span class="hljs-function"><span class="hljs-title">GetQueueName</span></span></span><span class="hljs-function">(</span><span class="hljs-params"><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">this</span></span></span></span><span class="hljs-function"><span class="hljs-params"> IWorkerQueueHandler Handler</span></span></span><span class="hljs-function">)</span></span> { <span class="hljs-keyword"><span class="hljs-keyword">return</span></span> CleanUpQueueName(Handler.GetType().AssemblyQualifiedName); } <span class="hljs-function"><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">public</span></span></span><span class="hljs-function"> </span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">static</span></span></span><span class="hljs-function"> </span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">string</span></span></span><span class="hljs-function"> </span><span class="hljs-title"><span class="hljs-function"><span class="hljs-title">GetQueueName</span></span></span><span class="hljs-function">(</span><span class="hljs-params"><span class="hljs-function"><span class="hljs-params">Type HandlerType</span></span></span><span class="hljs-function">)</span></span> { <span class="hljs-keyword"><span class="hljs-keyword">return</span></span> CleanUpQueueName(HandlerType.AssemblyQualifiedName); } }</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     インターフェイスは非常にシンプルで、キューからのメッセージを処理するすべてのロジックを実装するメソッドが1つだけあります。 ただし、拡張機能には1つの目標があります。ハンドラーのタイプからキューの受け入れ可能な名前を取得することです。 これにより、プログラマーがさまざまなハンドラーのキュー名を制御する必要がなくなります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Queueクラス自体は、Azureストレージにない場合、必要なキューの選択とその作成を実装します。 キューにタスクを追加するだけでなく、Azureサービスのインスタンスにメッセージを送信します。 この場合、すでに述べたように、インスタンスとロール間でメッセージを交換するメカニズムが使用されます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="cs hljs"><span class="hljs-function"><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">public</span></span></span><span class="hljs-function"> </span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">static</span></span></span><span class="hljs-function"> CloudQueue </span><span class="hljs-title"><span class="hljs-function"><span class="hljs-title">GetQueue</span></span></span><span class="hljs-function">(</span><span class="hljs-params"><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">string</span></span></span></span><span class="hljs-function"><span class="hljs-params"> QueueName</span></span></span><span class="hljs-function">)</span></span> { CreateOnceQueue(QueueName); <span class="hljs-keyword"><span class="hljs-keyword">return</span></span> queueStorage.GetQueueReference(QueueName); } <span class="hljs-keyword"><span class="hljs-keyword">public</span></span> <span class="hljs-keyword"><span class="hljs-keyword">static</span></span> <span class="hljs-keyword"><span class="hljs-keyword">bool</span></span> AddToQueue&lt;QueueHandlerType&gt;(<span class="hljs-keyword"><span class="hljs-keyword">string</span></span> Task) <span class="hljs-keyword"><span class="hljs-keyword">where</span></span> QueueHandlerType : IWorkerQueueHandler { <span class="hljs-keyword"><span class="hljs-keyword">var</span></span> Queue = GetQueue(WorkerQueueHandlerExtensions.GetQueueName(<span class="hljs-keyword"><span class="hljs-keyword">typeof</span></span>(QueueHandlerType))); <span class="hljs-keyword"><span class="hljs-keyword">return</span></span> AddToQueue&lt;QueueHandlerType&gt;(Queue, Task); } <span class="hljs-keyword"><span class="hljs-keyword">public</span></span> <span class="hljs-keyword"><span class="hljs-keyword">static</span></span> <span class="hljs-keyword"><span class="hljs-keyword">bool</span></span> AddToQueue&lt;QueueHandlerType&gt;(CloudQueue Queue, <span class="hljs-keyword"><span class="hljs-keyword">string</span></span> Task) { <span class="hljs-keyword"><span class="hljs-keyword">try</span></span> { <span class="hljs-keyword"><span class="hljs-keyword">var</span></span> Message = <span class="hljs-keyword"><span class="hljs-keyword">new</span></span> CloudQueueMessage(Task); Queue.AddMessage(Message); Internal.RoleCommunicatior.WorkerRoleCommand(<span class="hljs-keyword"><span class="hljs-keyword">typeof</span></span>(QueueHandlerType)); <span class="hljs-keyword"><span class="hljs-keyword">return</span></span> <span class="hljs-literal"><span class="hljs-literal">true</span></span>; } <span class="hljs-keyword"><span class="hljs-keyword">catch</span></span> { <span class="hljs-keyword"><span class="hljs-keyword">return</span></span> <span class="hljs-literal"><span class="hljs-literal">false</span></span>; } }</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     キューに入ってくるタスクのおよその量とストリームのおおよその構造を知っていれば、このようなソリューションの利点を簡単に計算できます。 そのため、たとえば、タスクが主に20〜23時間の夕方に発生する場合、間隔を空けてタスクをチェックするほとんどの時間は「アイドル」になります。 そして、21時間の間、結果なしでキューからタスクを選択すると計算するのは簡単です。 さらに、このようなチェックが1秒間に1回実行されると、1日に約75,000の「アイドル」トランザクションが発生します。  10,000あたり0.01ドルの取引額では、この金額は1日あたり0.075ドルまたは1か月あたり2.25ドルになります。 ただし、100の異なるキューがある場合、1か月あたりの追加費用は225ドルになります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     間隔を置いたジョブ処理の反対側は、処理の遅延です。 一部のタスクでは、このような遅延はそれほど大きくありません。 しかし、できる限り迅速に処理する必要があるタスクがあります。たとえば、著者、ディストリビューター、サービス間の収入の分配などです。 作成者は、しばらくしてからではなく、アカウントで稼いだお金をすぐに見たいので、このタスクは処理時間に敏感です。 さらに、タスクのフローが非常に大きい場合、処理間の1秒の遅延により、処理されたタスクのフローが1分あたり60に制限されます。これにより、処理が即座に実行されます。 したがって、負荷がピークのとき、ジョブフローはキューを非常に迅速に膨張させる可能性があります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     特定の時間間隔でキューからタスクを処理するこのアプローチでは、キューからタスクを選択する「アイドル」試行のコストとピーク負荷での処理の遅延とのバランスを取る必要があります。 提案されたソリューションにより、間隔とアイドルトランザクションを処理する必要がなくなります。 また、キューからタスクの処理を遅延なく、高い効率で、「アイドル」トランザクションの追加コストなしで構築できます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     また、キューを操作するメカニズムはCPlase Open Sourceライブラリの一部であり、まもなく公開され、すべての人が利用できるようになることに注意してください。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     シリーズを読む： 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li>  “ <a href="http://habrahabr.ru/post/140418/">AtContent.com。</a>  <a href="http://habrahabr.ru/post/140418/">内部構造とアーキテクチャ</a> ”、 </li><li>  「 <a href="http://habrahabr.ru/post/140461/">ロールとインスタンス間でメッセージを交換するメカニズム</a> 」、 </li><li>  「 <a href="http://habrahabr.ru/post/140955/">インスタンスでのデータのキャッシュとキャッシュの管理</a> 」、 </li><li>  「 <a href="http://habrahabr.ru/post/142627/">OrおよびContains操作を実装するAzure Table StorageのLINQ拡張機能</a> 」 </li><li>  「 <a href="http://habrahabr.ru/post/143838/">データをパーツに分割し、Azure Table StorageのPartitionKeyとRowKeyを生成するための実用的なアドバイス</a> 。」 </li></ul></div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+<section class="more-articles-navigation-panel js-more-articles-navigation-panel">
+<h4>More articles:</h4>
+<nav class="list-of-articles-container js-list-of-articles-container"><ul class="list-of-pages js-list-of-pages">
+<li><a href="../J141792/index.html">YiiConf 2012、最終登録オープン</a></li>
+<li><a href="../J141793/index.html">onbeforeunloadの仕組みと理由</a></li>
+<li><a href="../J141794/index.html">プレーヤーに関するゲームデザイナー、またはプレーヤーのプログラム方法</a></li>
+<li><a href="../J141795/index.html">AT＆Tによる公式ロック解除</a></li>
+<li><a href="../J141796/index.html">HP ProLiant Gen8-150サーバー設計の強化</a></li>
+<li><a href="../J141802/index.html">ヨータがLTEネットワークの発売日を引き継ぐ</a></li>
+<li><a href="../J14181/index.html">ユーリ・スタリコフへのインタビュー-マイクロソフトの最初のソビエトプログラマー</a></li>
+<li><a href="../J141810/index.html">YandexはCERNの検索を開始しました</a></li>
+<li><a href="../J141813/index.html">ファジィアイコンは私たちを疲れさせる</a></li>
+<li><a href="../J141814/index.html">Yandex Data Analysis Schoolで新しい登録が開始されます</a></li>
+</ul></nav>
+</section><br />
+<a href="../../allArticles.html"><strong>All Articles</strong></a>
+<script src="../../js/main.js"></script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript" >
+  (function (d, w, c) {
+      (w[c] = w[c] || []).push(function() {
+          try {
+              w.yaCounter70218013 = new Ya.Metrika({
+                  id:70218013,
+                  clickmap:true,
+                  trackLinks:true,
+                  accurateTrackBounce:true,
+                  webvisor:true
+              });
+          } catch(e) { }
+      });
+
+      var n = d.getElementsByTagName("script")[0],
+          s = d.createElement("script"),
+          f = function () { n.parentNode.insertBefore(s, n); };
+      s.type = "text/javascript";
+      s.async = true;
+      s.src = "https://mc.yandex.ru/metrika/watch.js";
+
+      if (w.opera == "[object Opera]") {
+          d.addEventListener("DOMContentLoaded", f, false);
+      } else { f(); }
+  })(document, window, "yandex_metrika_callbacks");
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/70218013" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+
+<!-- Google Analytics -->
+  <script>
+    window.ga = function () { ga.q.push(arguments) }; ga.q = []; ga.l = +new Date;
+    ga('create', 'G-FEDBM7F51Q', 'auto'); ga('send', 'pageview')
+  </script>
+  <script src="https://www.google-analytics.com/analytics.js" async defer></script>
+
+</section>
+
+<footer class="page-footer">
+  <div class="page-footer-legal-info-container page-footer-element">
+    <p>
+      Clever Geek | <span class="page-footer-legal-info-year js-page-footer-legal-info-year">2020</span>
+    </p>
+  </div>
+  <div class="page-footer-counters-container page-footer-element">
+    <div class="company-info js-company-info" itemscope="" itemtype="http://schema.org/Organization">
+      <span itemprop="name">Western Town Media (WTM)</span>
+      <div itemprop="address" itemscope="" itemtype="http://schema.org/PostalAddress">
+        <span itemprop="streetAddress">1968 Stoney Lonesome Road</span>
+        <br>
+        <span itemprop="postalCode">PA 18640</span>
+        <span itemprop="addressLocality">Pittston, USA</span>
+      </div>
+      <span itemprop="telephone">570-362-1316</span>
+    </div>
+    <script type="application/ld+json">
+      {
+        "@context": "http://schema.org",
+        "@type": "Organization",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Pittston, USA",
+          "postalCode": "PA 18640",
+          "streetAddress": "1968 Stoney Lonesome Road"
+        },
+        "name": "Western Town Media (WTM)",
+        "telephone": "570-362-1316"
+      }
+    </script>
+  </div>
+</footer>
+  
+</body>
+
+</html>
