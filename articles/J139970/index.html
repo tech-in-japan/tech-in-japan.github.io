@@ -1,0 +1,1296 @@
+<!doctype html>
+<html class="no-js" lang="en">
+
+<head>
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-FEDBM7F51Q"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-FEDBM7F51Q');
+  </script>
+
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <title>👨🏾‍🎓 😐 👴🏽 CUDAでの高速JPEG圧縮 💞 🌅 🧖🏿</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <meta name="description" content="概要： NVIDIAグラフィックカードでJPEG画像を圧縮するための高速FVJPEGエンコーダーを作成しました。 アルゴリズム、その実装、およびCUDAテクノロジーを使用した最適化を並列化することにより、大幅な加速が得られました。 圧縮速度の観点では、FVJPEGエンコーダーは、ベースラインJPEG...">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml"/>
+
+  <link rel="stylesheet" href="../../css/main.css">
+
+  <link href="https://fonts.googleapis.com/css?family=Quicksand&display=swap" rel="stylesheet">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+  <script>document.write('<script src="https://pagea' + 'd2.googles' + 'yndication.com/pagea' + 'd/js/a' + 'dsby' + 'google.js"><\/script>')</script>
+  <script>
+        var superSpecialObject = {};
+        superSpecialObject['google_a' + 'd_client'] = 'ca-p' + 'ub-6974184241884155';
+        superSpecialObject['enable_page_level_a' + 'ds'] = true;
+       (window['a' + 'dsbygoogle'] = window['a' + 'dsbygoogle'] || []).push(superSpecialObject);
+  </script>
+</head>
+
+<body>
+  <!--[if lte IE 9]>
+    <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience and security.</p>
+  <![endif]-->
+  <header class="page-header js-page-header">
+    <a class="page-header-logo-container" href="https://tech-in-japan.github.io/index.html"></a>
+    <div class="page-header-text">Clever Geek Handbook</div>
+  </header>
+  <section class="page js-page"><h1>CUDAでの高速JPEG圧縮</h1><div class="post__text post__text-html js-mediator-article" id="post-content-body"> 概要： <em>NVIDIAグラフィックカードでJPEG画像を圧縮するための高速FVJPEGエンコーダーを作成しました。</em>  <em>アルゴリズム、その実装、およびCUDAテクノロジーを使用した最適化を並列化することにより、大幅な加速が得られました。</em>  <em>圧縮速度の観点では、FVJPEGエンコーダーは、ベースラインJPEGアルゴリズムを使用した画像圧縮用の既存のすべてのソフトウェアおよびハードウェアソリューションよりも優れています。</em> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <a name="habracut"></a>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     非可逆画像圧縮アルゴリズムを比較する場合、圧縮の程度と結果の画像の品質はほぼ常に議論されますが、圧縮時間は何らかの理由で二次的な指標と見なされます。 どうやら、ほとんどのアプリケーションでこのアプローチは有効ですが、圧縮時間が非常に重要になる場合があります。 たとえば、画像の大きな配列を圧縮するとき、またはリアルタイム圧縮を必要とする大量のデータを生成できる機器を使用するとき。 これは、高速カメラからの一連の画像を圧縮するときの状況です。 一般的な高速カメラからのデータストリームは、毎秒625 MB（解像度1280 x 1024、8ビット、毎秒500フレーム）以上に達する可能性があります。  PCI-Express 2.0 x8フレームグラバーを介して2.4 GB /秒の速度でコンピューターのRAMにオンラインでデータを書き込む高速ビデオカメラがあります。 このようなフローを処理するために、データ処理アルゴリズムを並列化する要件を検討する必要さえありません。これは定義によるものです。 したがって、高速圧縮アルゴリズムを選択するために、次の基準が策定されました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li> エンコードとデコードの両方のアルゴリズムを並列化する機能 </li><li> 許容できる品質で損失を伴う画像を10〜20回圧縮する機能 </li><li> アルゴリズムの計算の複雑さは可能な限り小さくする必要があります </li><li> タスクをサブタスクの可能な最大数に分割する </li><li> 単一のデータ処理ストリームの高速メモリサイズの最小要件 </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      JPEGアルゴリズムはこれらの要件に完全に準拠しています。 これらの条件を満たす他の非可逆圧縮アルゴリズムがある可能性がありますが、ここではJPEGオプションのみを検討します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     最初に、ベースラインJPEGアルゴリズムを使用した非可逆画像圧縮の速度（パフォーマンス）のベンチマークを調べます。ただし、画像が既にRAMにロードされており、圧縮のみが必要な場合があります。 得られたソリューションと明らかに弱い競合他社とを比較する場合、広範な方法には従いません。したがって、ライバルとして、今日のマルチコアCPU向けの最速の商用ソリューションを検討します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <a href="http://www.accusoft.com/picphotofeatures.htm">Accusoft Pegasus PICTools Photo JPEGエンコーダー</a> （ <a href="http://www.accusoft.com/picphotofeatures.htm">毎秒150-250</a> MBのパフォーマンス、8ビット、圧縮率〜50％の圧縮） 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <a href="http://software.intel.com/en-us/articles/intel-integrated-performance-primitives-intel-ipp-jpeg-sample-and-performance-faqs/">Intel JPEGエンコーダーIPP-7.0</a> ：uic_transcoder_con.exe、バージョン7.0ビルド205.85、[7.7.1058.205]、名前ippjy8-7.0.dll +、2011年11月27日、64ビット、公式の圧縮率データなし、テスト結果以下に示す） 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     高速ビデオカメラを使用するための<a href="http://www.norpix.com/applications/jpeg_compression.php">Norpix JPEGエンコーダー</a> （毎秒200〜250 MBのパフォーマンス、8ビット、不明な圧縮率の圧縮） 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     残念ながら、エンコード時間を報告するIPP-7エンコーダーを除いて、このデータを検証する方法はありません。 より詳細な分析を行うには、処理アルゴリズムの各段階のパフォーマンスに関するデータもありません。そのため、同じ圧縮パラメーターを持つ一般的なパフォーマンスインジケーターのみに比較を制限する必要があります。  KakaduはJPEGコーデックを見つけることができませんでした。この会社は現在、JPEG2000コーデックのみをリリースしており、libjpeg_simd-6bおよびlibjpeg-turboの圧縮速度が非常に低かったためです。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     固定量子化テーブルとハフマンテーブルを使用したベースラインJPEG標準の実装について話しているため、圧縮画像の品質と圧縮率は圧縮パラメーターによって一意に決定されるため、PSNR測定と視覚的な品質評価は不要です。 ただし、すべてのテストでPSNR測定と視覚品質評価が実行されました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     マルチコアCPUでの最高の商用ソリューションの結果は印象的であるため、それらを上回ることを試みることは非常に興味深いです。 これを行うには、NVIDIA CUDAテクノロジを使用したベースラインJPEGアルゴリズムを使用して、ビデオカード上の画像を圧縮するオプションを検討してください。 タスクは最大のパフォーマンスを得ることであるため、ハードウェアは適切でなければなりません。  NVIDIA GeForce GTX 580はぴったりです。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     この研究分野では、エントロピーコーディングの段階のためにJPEGアルゴリズムを完全に並列化できないと述べている多くのプロジェクトと科学論文が発見されています。 したがって、離散コサイン変換がビデオカードで実行され、残りの計算がCPUで実行されたときに、ハイブリッドソリューションが海外で作成されました。 したがって、1つのステージのみが加速され、明らかにGPUに適しています。 その結果、コーディング速度はわずかに向上しましたが、CPU上の最高のマルチスレッドソリューションと圧縮率を競うことはできませんでした。 残念ながら、NVIDIAまたはATIビデオカードに基づく生産的なJPEGエンコーダーに関する情報を見つけることができませんでした。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     元の非圧縮画像データがコンピューターのRAMにあり、JPEGで圧縮する必要がある問題を考えてください。 ビデオカードでのベースラインJPEGアルゴリズムの実装には、次の段階が含まれます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <habracut>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li>  RAMからビデオカードへのデータのダウンロード（ホストからデバイスへの転送） </li><li>  RGB-&gt; YCbCr変換（8ビット画像には不要） </li><li> 画像を8x8ブロックに分割する </li><li> 各ピクセルのオフセット（128を減算） </li><li> 各ブロックの離散コサイン変換（DCT） </li><li> 各ブロックの量子化 </li><li> 各ブロックの再配置（ジグザグ） </li><li> 各ブロックからのDCのデルタコーディング（DPCM） </li><li> 各ユニットからのACの直列エンコード（RLE） </li><li> 各ブロックからのACのハフマンコーディング </li><li> ブロックグループのRSTn再起動マーカーの設定 </li><li> 出力ファイルの生成：圧縮ブロックからのデータの接着、JFIFヘッダーの追加 </li><li> ビデオカードからRAMへのJPEGファイルのアンロード（デバイスからホストへの転送） </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     このスキーム全体がCUDAに実装されました。 標準JPEGアルゴリズムの主なアイデアの1つは、画像を8x8ブロックに分割し、離散コサイン変換を使用する独立したデータ処理を行うことです。これは、本質的に並列アルゴリズム回路です。 離散コサイン変換の並列化はすでに知られており、パフォーマンスの観点から得られた結果は、CPUよりもGPUの方がはるかに優れていました。  DC係数のデルタコーディングステージ（DPCM）も並列化できます。 シリーズコーディング（RLE）とハフマンコーディングは、各8x8ブロックのデータに対して独立して実行されるため、これらも並列です。 結論として、各ブロックから出力ファイルに圧縮データを書き込み、そこからJPEG画像を形成し、ファイルをコンピューターのRAMに送信する必要があります。 したがって、ほぼすべてのJPEGエンコーディングスキームが正常に並列化され、このアルゴリズムはGPUで完全に実装できると主張できます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     デコードの実装に関する問題は残っています。 このため、マーカーは当初、JPEG標準で提供されていたため、圧縮イメージ内の任意の場所からだけでなく、連続してデコードすることができます。 残念ながら、CPUのほとんどの実装では、JPEG圧縮アルゴリズムにはこれらのマーカーがありません。したがって、そのような状況では、デコードの第1段階が順次実行され、「エイリアン」画像は比較的ゆっくりデコードされます（エンコード時にこれらのマーカーが置かれます）。 エンコード時にマーカーを設定した場合、デコードを開始する前に、インストールされているすべてのマーカーのクイック検索が行われ、その後、並行してデコードを実行することが可能になります。 上記の圧縮方式では、特定の数の8x8ブロックの後にマーカーがインストールされます。その結果、デコードプロセスも並列になります。 ただし、デコードの問題はこの記事の範囲外です。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     プログラムをテストするために、次の標準条件が選択されました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li>  8ビットのテスト画像 </li><li> 圧縮率50-100％ </li><li>水平および垂直の画像サイズは8の倍数でなければなりません </li><li> ソースファイルのサイズは64 MB以下 </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     テストでは、次のコンピューター構成を使用しました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li>  ASUS P6T Deluxe V2 LGA1366、X58、ATX Core i7 920、2.67 GHz、DDR-III 6 GB </li><li> 計算用のビデオカード：GeForce GT 240（cc = 1.2、96コア）またはGeForce GTX 580（cc = 2.0、512コア）。 </li><li> オペレーティングシステムWindows-7、64ビット、CUDA 4.1、ドライバー286.19 </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     テスト8ビット画像は一般的に受け入れられ（lenna.bmp、boats.bmp）、IPP（uic_test_image.bmp）から使用され、cathedral.bmpとbig_building.bmpは<a href="http://www.imagecompression.info/test_images/">ここで</a>取得され<a href="http://www.imagecompression.info/test_images/">ます</a> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     各画像の表の一番下の行は、量子化テーブルとハフマンテーブルでの圧縮時の圧縮率と圧縮率（ファイルサイズが減少する回数）の対応を示しています。これらは、ベースラインJPEGでデフォルトで受け入れられます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="http://www.fastvideo.ru/articles/fvjpeg/img/table_1.jpg" alt="テスト画像">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Windowsでの合計FVJPEGコーデックランタイムは、QueryPerformanceCounter（）関数を使用して測定されました。 ビデオカード上の個々の機能の実行時間は、NVIDIAプロファイラーを使用して測定されました。 プロファイラーの結果は、アルゴリズムの各段階の圧縮速度を詳細に分析するために必要です。これは主に開発者にとって興味深いものです。 同じデータで計算を繰り返すことは実用的ではないため、すべてのテストでの繰り返し数（測定時間の精度を高める多くのプログラムのオプション）は1に等しくなります。 したがって、主なタスクは、エンコーダの実際の動作モードと圧縮パフォーマンスの制限値を調べることでした。 小さい画像の場合、コーディング速度が10〜20％広がるため、一連のテストで最高の結果が得られました。 テストには、NVIDIA GeForce GT 240およびGeForce GTX 580グラフィックスカードのFVJPEGエンコーダーと、Core i7 920のIPP-7.0のJPEGエンコーダーが含まれます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     表2は、圧縮率に応じてさまざまな8ビット画像のNVIDIA GeForce GT 240ビデオカードのJPEG圧縮率の測定結果をメガバイト/秒で示しています。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="http://www.fastvideo.ru/articles/fvjpeg/img/table_2.jpg" alt="NVIDIA GeForce GT 240グラフィックスカードの圧縮速度">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     表3は、NVIDIA GeForce GTX 580グラフィックスカードのJPEGでの圧縮速度をメガバイト/秒で測定した結果を示しています。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="http://www.fastvideo.ru/articles/fvjpeg/img/table_3.jpg" alt="NVIDIA GeForce GTX 580グラフィックスカードの圧縮速度">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     圧縮速度を測定するとき、ビデオカードにデータをコピーする時間、およびその逆の時間を考慮することが非常に重要です。 実際、GPUでJPEGの圧縮アルゴリズムを実装する場合、ビデオカードのメモリにデータをコピーするのにかかる時間は、通常最も長い操作の1つです。 ビデオカードのメモリへのデータのロードを考慮せずにコーディングパフォーマンスを評価する場合、つまり 損失のある画像を圧縮するときの計算のパフォーマンスを測定したい場合、十分に大きい画像と50％の圧縮率で、GeForce GTX 580のJPEGで1秒あたり10 GB以上の圧縮速度が得られます。この結果は、並列計算の最高の効率の優れた例です強力なグラフィックカード。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Intel IPP-7.0（アップデート6）のエンコーダーと比較するために、NVIDIAビデオカードのテストと同じ画像セットと同じ圧縮率が使用されました。 コマンドラインは次のようになりました。uic_transcoder_con.exe-otest.jpg -ilenna.bmp -t1 -q50 -n8。これは、イメージlenna.bmpの圧縮、新しいイメージtest.jpgの作成、ベースラインJPEGアルゴリズム（-jb）の使用、時間の測定を意味します精度を高めたプログラム実行（-t1）、8スレッドに並列化した場合の圧縮率50％（-q50）（-n8）。 同じイメージを再圧縮する実用的なタスクがないため、-m動作モードは圧縮手順を繰り返すために使用されませんでした。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     表4は、IPP-7.0からのJPEGエンコーダーのパフォーマンスの結果を示しています（1秒あたりのMb圧縮率/ミリ秒単位の画像圧縮時間）。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="http://www.fastvideo.ru/articles/fvjpeg/img/table_4.jpg" alt="IPP-7.0からCPU Core i7 920までのJPEGエンコーダー圧縮率">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      IPP-7.0のテストイメージを使用し、同じ圧縮パラメーター（uic_test_image.bmp、1280 x 960、8ビット、圧縮率は50％（8.1倍の圧縮に相当））を使用すると、GeForce GTX 580で2.25のパフォーマンスが得られますGB /秒。IPP-7.0からJPEGエンコーダー用の8スレッドを並列化する場合、Core i7 920 CPUでの332 MB /秒よりも著しく優れています（6.7倍高速）。  IPP-7.0エンコーダーの結果としてのパフォーマンスは、同じパラメーターで毎秒680 MBの圧縮速度を提供する、かなり弱いGeForce GT 240グラフィックスカードと比較しても2倍低いです。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     図1は、さまざまな値のGeForce GT 240、GeForce GTX 580（FVJPEGエンコーダー）、およびCPU Core i7 920（IPP-7.0のJPEGエンコーダー）でのテスト画像cathedral.bmp（2000 x 3008、8ビット）の圧縮率の結果を示していますベースラインJPEG圧縮率： 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="http://www.fastvideo.ru/articles/fvjpeg/img/figure_1.jpg" alt="GeForce GT 240、GeForce GTX 580、およびCPU Core i7 920でのJPEGのCompression.bmp 8ビット画像圧縮率">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      NVIDIAプロファイラーを使用して、エンコードアルゴリズムの各段階の期間を測定しました。 表5は、ベースラインJPEGアルゴリズムとデフォルトの量子化テーブルおよびハフマンテーブルを使用した圧縮時間のベンチマークを、NVIDIA GeForce GTX 580グラフィックスカードのさまざまな圧縮率に対して示しています。画像cathedral.bmp、解像度2000 x 3008、8ビット、度の後の括弧内圧縮は、このイメージが圧縮される回数を示します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="http://www.fastvideo.ru/articles/fvjpeg/img/table_5.jpg" alt="GeForce GTX 580グラフィックスカードでのJPEG圧縮のメインステージのランタイム">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     したがって、ビデオカードでJPEG圧縮アルゴリズムの各段階を実行する速度を確認できます。ソースデータの読み込み、離散コサイン変換、シリーズコーディング、ハフマンコーディング、圧縮画像のアップロードです。 エントロピーコーディングのレートを評価する場合、シリーズのコーディングとハフマンによるコーディングの寄与を区別する必要があります。 実際、JPEGアルゴリズムのさまざまな段階でデータサイズが異なるため、パフォーマンスを計算する際に重要です。 ハフマンコーディングの場合、コーディング速度の推定値を低くするために、圧縮ファイルのサイズをランタイムで除算できます。 圧縮の各段階の速度の正確な値を計算するには、時間だけでなく、計算の各段階でソースデータのサイズも測定する必要があります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     したがって、JPEGアルゴリズムを使用したビデオカード上の画像の非常に高速な圧縮の基本的な可能性が示されています。また、予算とモバイルカードを含むかなり広いクラスのNVIDIAグラフィックカードに対しても可能です。 さらに、結果は、マルチコアCPUの最速のソリューションで見たJPEGエンコード速度のベンチマークよりも大幅に優れています。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     ビデオカードのJPEGアルゴリズムの各段階の実行時間を分析すると、次の図が得られます。最も遅い操作の1つは、コンピューターのRAMからビデオカードにデータをロードすることです。 大きな画像の場合、ダウンロードとアップロードの両方の速度は約6 GB /秒です。 この制限は、PCI-Express 2.0バスの帯域幅によるものであり、原則として大幅な高速化は、次世代のPCI-Express（Gen2からGen3）に移行する場合にのみ可能です。 画像の読み込み時間と離散コサイン変換の実行時間は、画像サイズのみに依存します。 シリーズコーディングとハフマンコーディングは、画像自体の特定のデータ、圧縮率、およびこの圧縮段階でのデータのサイズに依存します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     生産性を高めるための重要なポイントは、画像サイズです。 画像サイズが大きいほど、ビデオカードの圧縮率は高くなります。 どうやら、これは、小さな画像のデータがビデオカードを完全にロードするには不十分であり、コンピューティングパワーの一部がアイドル状態になっているためです。 比較的大きなフレーム（4メガバイト以上）を使用すると、ビデオカードの全負荷と圧縮パフォーマンスが向上します。 それでも、小さな画像には加速オプションがあります。複数のフレームを一度にロードして、それらを並行してエンコードできます。 したがって、ビデオカードを完全にダウンロードし、小さな画像でも最大のパフォーマンスを得ることができます。 したがって、一連の小さなフレームの圧縮率は、大きな単一の画像で得られる結果に近くなります。 複数の画像を同時にダウンロードおよび圧縮するこの動作モードはすでにテストされており、FVJPEGコーデックの最終バージョンに含まれます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     また、損失の多いJPEG画像圧縮速度についてGeForce GTX 580グラフィックスカードで得られた結果は、同じアルゴリズムのすべての既知のハードウェアFPGA画像圧縮ソリューションよりもパフォーマンスが優れていることに注意してください。 以下の企業は、いくつかの最速のJPEG FPGA画像圧縮システムを提供しています。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <a href="http://www.barco.com/en/product/1778/features">Barco BA116 JPEGエンコーダー（高速ベースラインDCTベースのJPEGカラーエンコーダー）-FPGA</a>用のJPEGハードウェアエンコード機能、最大140 MB / sのパフォーマンス。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <a href="http://www.cast-inc.com/ip-cores/images/jpeg-c/index.html">キャスト株式会社</a>  <a href="http://www.cast-inc.com/ip-cores/images/jpeg-c/index.html">（JPEG-CベースラインJPEG圧縮コーデックコア）</a> -FPGA用ジープのハードウェア圧縮機能、Xilinx Virtex-6では最大275 MB / s、アルテラFPGA Stratix IVでは最大280 MB / s。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <a href="http://www.visengi.com/products/jpeg_hardware_encoder">Visengi（JPEG / MJPEGハードウェアコンプレッサーIPコア）</a> -Virtex-5 FPGA用のjeepegハードウェアエンコーディング機能、最大405 MB / sのパフォーマンス。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <a href="http://www.alma-tech.com/products_index.php%3Fitem%3D/01_Image%2520Compression/01_Baseline%2520JPEG/04_SVE-JPEG-E%26sid%3D0">Alma-Tech（SVE-JPEG-E、SpeedView対応JPEGエンコーダーメガファンクション）</a> -アルテラ/ザイリンクスFPGAのベースラインJPEGハードウェア圧縮機能、最大500 MB /秒のパフォーマンス。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     専門的な展示会では、最大680 MB /秒の容量を持つFPGA用のJPEGエンコーダーの作成に関する民間企業からの報告がありました（4つの個別のユニットが並行して動作し、それぞれ170 MB /秒を提供します）が、そのようなソリューションの詳細は見つかりませんでした。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      GPU上のソフトウェアエンコーダーとFPGA上のハードウェアJPEGエンコーダーを比較すると、Verilog / VHDLと比較して、GPU上で結果として得られるソリューションのパフォーマンスが高いことに加えて、CUDAのCコードがより理解しやすく、変更に基づいて新しいものを作成することに注意する価値があります、より複雑な画像処理および圧縮システム。  FPGAには利点があることは明らかですが、計算速度の問題のみを考慮することに限定します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     完全を期すために、ビデオカードの並列コンピューティングテクノロジの既存の欠点を忘れてはなりません。 まず、ビデオカードでの計算は、並列化されたアルゴリズムに対してのみ意味があります。これは、多くのシーケンシャルアルゴリズムではこれが不可能なことを意味します。したがって、実装にはCPUのソフトウェアが必ず必要になります。 また、CUDAテクノロジーはNVIDIAが製造したビデオカードでのみ使用でき、最新の成果（Fermiテクノロジー）はビデオカードの最新モデルでのみ使用できます。 原則として、さまざまなメーカーのビデオカードに適したOpenCL標準がありますが、NVIDIAビデオカードに最大のパフォーマンスを提供するわけではなく、一般に、既存のすべてのビデオカードアーキテクチャに対するこのタイプのソリューションの汎用性は依然として議論の余地があります。 ビデオカードのストリーミングマルチプロセッサのサイズが非常に小さい高速共有メモリであることが重要です。これにより、使用されるアルゴリズムとその効率に追加の制限が導入され、利用可能な（比較的遅い）GDDR5メモリは現在、ビデオカードあたり6ギガバイト以下です。 RAMは100ギガバイトを超える場合があります。 高いパフォーマンスを得るには、最大のビデオカード負荷を達成する必要があり、これは並列アルゴリズムと大量のデータに対してのみ可能です。  GPUでの計算では、まず最初にデータをビデオカードにコピーする必要があります。これにより、追加の遅延が発生し、計算時間が長くなります。 したがって、ビデオカードで高性能ソリューションを設計するときは、アルゴリズムのさまざまな機能と特定のハードウェアでの実装の可能性を考慮する必要があります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     この記事では、単一のビデオカードで標準のJPEGアルゴリズムを使用して8ビット画像をすばやく圧縮するためのソリューションを紹介します。  NVIDIAには、こうしたタスクを複数のビデオカードに並列化する技術が既に備わっており、原則として、圧縮速度をさらに倍増する機会を提供できるため、このようなソリューションのパフォーマンスをスケーリングするさまざまな方法がありました。  GeForce GTX 590のようなより強力なグラフィックカードを使用しても、より良い結果が得られます。 コピーとコンピューティングの段階を並列化するときにアルゴリズムを高速化する潜在的な機会もあります。  NVIDIAグラフィックスカードの次のより強力な世代は、圧縮パフォーマンスの向上という文脈でも見ることができます。 したがって、ビデオカードの並列コンピューティングテクノロジは、高速のデータ処理アルゴリズムを作成するための十分な機会を提供しますが、改善すべき点と努力すべき点がまだあります。 さらなる研究のために、得られたソリューションの最適化と、ロスレスを含む高速画像およびビデオ圧縮（MJPEG）のための他のアルゴリズムも非常に興味深いです。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     この記事で説明されているビデオカードの画像を圧縮するためのソフトウェアは予備調査の結果であり、完成した製品としてはまだ存在していません。  FVJPEGコーデックのリリースと、Windows / Linux用のベースラインJPEGアルゴリズムを使用したNVIDIA GPUでの高速画像圧縮用の対応するSDKが近い将来にリリースされる予定です。 </habracut></div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+<section class="more-articles-navigation-panel js-more-articles-navigation-panel">
+<h4>More articles:</h4>
+<nav class="list-of-articles-container js-list-of-articles-container"><ul class="list-of-pages js-list-of-pages">
+<li><a href="../J139963/index.html">SharePoint 2010でリストのカスタムフィルターを作成する</a></li>
+<li><a href="../J139964/index.html">SilverBirdのツイッターカンフー</a></li>
+<li><a href="../J139968/index.html">Nginx-技術的な仕事のために出発</a></li>
+<li><a href="../J139969/index.html">クロスブラウザCSS</a></li>
+<li><a href="../J13997/index.html">Web上のHDビデオ-FlashとSilverlightのどちらですか？</a></li>
+<li><a href="../J139971/index.html">モスクワ・ジャンゴのMeetupはどうでしたか</a></li>
+<li><a href="../J139972/index.html">Coco / r Translator Generatorの使用</a></li>
+<li><a href="../J139974/index.html">ハッシュと安全なパスワードストレージについて少し</a></li>
+<li><a href="../J13998/index.html">サイトのアップグレードが簡単になりました</a></li>
+<li><a href="../J139981/index.html">IPv4はいつ使い果たされますか？</a></li>
+</ul></nav>
+</section><br />
+<a href="../../allArticles.html"><strong>All Articles</strong></a>
+<script src="../../js/main.js"></script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript" >
+  (function (d, w, c) {
+      (w[c] = w[c] || []).push(function() {
+          try {
+              w.yaCounter70218013 = new Ya.Metrika({
+                  id:70218013,
+                  clickmap:true,
+                  trackLinks:true,
+                  accurateTrackBounce:true,
+                  webvisor:true
+              });
+          } catch(e) { }
+      });
+
+      var n = d.getElementsByTagName("script")[0],
+          s = d.createElement("script"),
+          f = function () { n.parentNode.insertBefore(s, n); };
+      s.type = "text/javascript";
+      s.async = true;
+      s.src = "https://mc.yandex.ru/metrika/watch.js";
+
+      if (w.opera == "[object Opera]") {
+          d.addEventListener("DOMContentLoaded", f, false);
+      } else { f(); }
+  })(document, window, "yandex_metrika_callbacks");
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/70218013" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+
+<!-- Google Analytics -->
+  <script>
+    window.ga = function () { ga.q.push(arguments) }; ga.q = []; ga.l = +new Date;
+    ga('create', 'G-FEDBM7F51Q', 'auto'); ga('send', 'pageview')
+  </script>
+  <script src="https://www.google-analytics.com/analytics.js" async defer></script>
+
+</section>
+
+<footer class="page-footer">
+  <div class="page-footer-legal-info-container page-footer-element">
+    <p>
+      Clever Geek | <span class="page-footer-legal-info-year js-page-footer-legal-info-year">2020</span>
+    </p>
+  </div>
+  <div class="page-footer-counters-container page-footer-element">
+    <div class="company-info js-company-info" itemscope="" itemtype="http://schema.org/Organization">
+      <span itemprop="name">Western Town Media (WTM)</span>
+      <div itemprop="address" itemscope="" itemtype="http://schema.org/PostalAddress">
+        <span itemprop="streetAddress">1968 Stoney Lonesome Road</span>
+        <br>
+        <span itemprop="postalCode">PA 18640</span>
+        <span itemprop="addressLocality">Pittston, USA</span>
+      </div>
+      <span itemprop="telephone">570-362-1316</span>
+    </div>
+    <script type="application/ld+json">
+      {
+        "@context": "http://schema.org",
+        "@type": "Organization",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Pittston, USA",
+          "postalCode": "PA 18640",
+          "streetAddress": "1968 Stoney Lonesome Road"
+        },
+        "name": "Western Town Media (WTM)",
+        "telephone": "570-362-1316"
+      }
+    </script>
+  </div>
+</footer>
+  
+</body>
+
+</html>
