@@ -1,0 +1,1088 @@
+<!doctype html>
+<html class="no-js" lang="en">
+
+<head>
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-FEDBM7F51Q"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-FEDBM7F51Q');
+  </script>
+
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <title>🚈 👩🏿‍🏭 👉 JBoss 7 Cluster-Apacheを使用した負荷分散 🌓 🐑 💅🏼</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <meta name="description" content="前回の記事では、JBossクラスターのすべてのノードへのユーザーセッションレプリケーションを構成しました。 このようなアクションだけではフォールトトレランスは向上しません。受信した機能を使用するには、クラスターのノード間で外部呼び出しを分散するロードバランサーが必要です。 JBossドキュメントの推...">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml"/>
+
+  <link rel="stylesheet" href="../../css/main.css">
+
+  <link href="https://fonts.googleapis.com/css?family=Quicksand&display=swap" rel="stylesheet">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+  <script>document.write('<script src="https://pagea' + 'd2.googles' + 'yndication.com/pagea' + 'd/js/a' + 'dsby' + 'google.js"><\/script>')</script>
+  <script>
+        var superSpecialObject = {};
+        superSpecialObject['google_a' + 'd_client'] = 'ca-p' + 'ub-6974184241884155';
+        superSpecialObject['enable_page_level_a' + 'ds'] = true;
+       (window['a' + 'dsbygoogle'] = window['a' + 'dsbygoogle'] || []).push(superSpecialObject);
+  </script>
+</head>
+
+<body>
+  <!--[if lte IE 9]>
+    <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience and security.</p>
+  <![endif]-->
+  <header class="page-header js-page-header">
+    <a class="page-header-logo-container" href="https://tech-in-japan.github.io/index.html"></a>
+    <div class="page-header-text">Clever Geek Handbook</div>
+  </header>
+  <section class="page js-page"><h1>JBoss 7 Cluster-Apacheを使用した負荷分散</h1><div class="post__text post__text-html js-mediator-article" id="post-content-body">  <i><a href="http://habrahabr.ru/post/189588/">前回の記事で</a>は、JBossクラスターのすべてのノードへのユーザーセッションレプリケーションを構成しました。</i>  <i>このようなアクションだけではフォールトトレランスは向上しません。受信した機能を使用するには、クラスターのノード間で外部呼び出しを分散するロードバランサーが必要です。</i>  <i>JBossドキュメントの推奨事項に従って、Apache Webサーバーによってノード間で負荷が分散されます。</i>  <i>記事のすべての情報はさまざまなソースで入手できますが、散在しており、実際に発生する可能性のある問題の解決策の説明とともに、すべてが1か所で収集されるリソースに出くわしませんでした（私は個人的に持っていたので、レシピを共有しています） 。</i>  <i>この記事は完全な情報のふりをするのではなく、逆のことです-最小構成について説明します。</i>  <i>特定の構成と設定に関心がある専門家と、このトピックから遠く離れているが、クラスタリングとは何かに関心がある人々の両方を対象としています。</i> <a name="habracut"></a>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h5> 仕事の一般原則 </h5>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <i>クラスタリングの原則に精通している専門家は、このセクションをスキップでき</i>ます。 明確にするために、多くの人が直面している特定の状況を考えます。1つのアプリケーションサーバーで構成される既存のシステムがクラスターソリューションに切り替わります。 そのような場合の最良の選択肢は、広大さをすぐに把握するのではなく、最小限の作業構成を構築することです：クラスター内の2つのアプリケーションサーバー、およびその前にクライアントへのインターフェイス（フロントエンド）としてのWebサーバー。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     作業のスキームは次のとおりです。以前にJBoss http / httpsコネクターに直接送信されたすべてのリクエストは、Webサーバー（Apache）にアクセスする必要があります。  Apacheは、2つのアプリケーションサーバーの「背後」での存在を「知る」ように構成されています。 クライアントが最初にシステムにアクセスすると、Webサーバーはアプリケーションサーバー（ <b>Node-1</b> ）の1つを選択し、要求をそれにリダイレクトします。 セッションが作成され、Cookieが追加されます。このCookieは、同じクライアントの後続のすべての要求を選択したアプリケーションサーバーに「固定」するためにWebサーバーによってさらに使用されます。  <b>Node-1は</b> 、クライアントリクエストを処理し、セッションを作成/変更するときに、その状態をクラスターの他のノードに複製します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <div class="spoiler">  <b class="spoiler_title">セッションの詳細</b> <div class="spoiler_text"> 簡略化。 セッション-JBossの側で作成され、さまざまな属性を持つオブジェクト。 セッションには、セッションの作成時にブラウザーに送信される識別子があり、クライアントがサーバーにアクセスするたびに、ブラウザーによってサーバーに送信されます（通常はCookieの形式で）。 サーバーは識別子によってセッションを識別し、見つかったセッションのデータのコンテキストで要求を処理します。 クラスターでのレプリケーションのタスクは、クライアントがセッションにアクセスしたときに、他のノードが識別子でセッション（およびその中に保存されたデータ）を見つけ、ノードのようにクライアントのリクエストを処理できるように、セッションデータを他のノードに送信することです彼女の文脈で。 </div></div>  <b>Host-1の</b> 「クラッシュ」が発生した場合、Apacheは次のクライアント呼び出しで、サーバーが利用できないことを検出し、リクエストを別のホスト（ <b>Host-2</b> ）にリダイレクトします。 これは、非常に「デッドウェイト」が使用され始める場所です。その状態は、クラスタのすべてのノードに既に存在しています。 リクエストは<b>Node-2</b>によって処理され、Apacheはセッションを「固定」します。つまり、 以降のすべてのユーザーリクエストは、すぐに<b>Node-2</b>に送信されます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/storage2/82c/6c9/a77/82c6c9a77c81e7f8d72c24bcdbd9a2f8.jpg">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h5> 基本設定 </h5>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     セッションレプリケーションがJBoss側ですでに構成されている場合、追加の設定は必要ありません。必要なもの（ <a href="http://ru.wikipedia.org/wiki/Apache_JServ_Protocol">AJP</a>コネクタ）はすべてデフォルト構成ですでに構成されています。  Apache HTTPサーバーを<a href="httpd.apache.org/download.cgi">ダウンロード</a>してインストールする必要があります（インストールプロセスはこの記事の範囲外です）。 すべての構成は、conf / httpd.confファイルを編集することにより行われます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ol><li>  <b>モジュールの接続</b> 。 次の行をコメント解除または追加します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre><code class="hljs nginx"><span class="hljs-attribute"><span class="hljs-attribute">LoadModule</span></span> proxy_module modules/mod_proxy.so LoadModule proxy_ajp_module modules/mod_proxy_ajp.so LoadModule proxy_balancer_module modules/mod_proxy_balancer.so LoadModule headers_module modules/mod_headers.so</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     ロードバランサーには、mod_proxy.so、mod_proxy_ajp.so、およびmod_proxy_balancer.soモジュールが必要です。 システムに「セッション」の概念がない場合は、十分です。 たとえば、Webサービスを介してリクエストを処理するシステムを使用しました。これらは相互に関連しない単一の呼び出しであるため、セッションは作成されませんでした。 この場合、ユーザーとそのセッションが存在するため、mod_headers.soモジュールを追加する必要があります。これにより、ブラウザーによって送信されたセッションデータを追跡できます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    </li><li>  <b>バランス調整</b> 。 次の行を追加します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="hljs pgsql">NameVirtualHost <span class="hljs-number"><span class="hljs-number">192.168</span></span><span class="hljs-number"><span class="hljs-number">.1</span></span><span class="hljs-number"><span class="hljs-number">.0</span></span>:<span class="hljs-number"><span class="hljs-number">80</span></span> &lt;VirtualHost <span class="hljs-number"><span class="hljs-number">192.168</span></span><span class="hljs-number"><span class="hljs-number">.1</span></span><span class="hljs-number"><span class="hljs-number">.0</span></span>:<span class="hljs-number"><span class="hljs-number">80</span></span>&gt; <span class="hljs-keyword"><span class="hljs-keyword">Header</span></span> <span class="hljs-keyword"><span class="hljs-keyword">add</span></span> <span class="hljs-keyword"><span class="hljs-keyword">Set</span></span>-Cookie "ROUTEID=.%{BALANCER_WORKER_ROUTE}e; path=/" env=BALANCER_ROUTE_CHANGED &lt;Proxy balancer://ajp-<span class="hljs-keyword"><span class="hljs-keyword">cluster</span></span>&gt; BalancerMember ajp://<span class="hljs-number"><span class="hljs-number">192.168</span></span><span class="hljs-number"><span class="hljs-number">.1</span></span><span class="hljs-number"><span class="hljs-number">.1</span></span>:<span class="hljs-number"><span class="hljs-number">8009</span></span> route=node1 BalancerMember ajp://<span class="hljs-number"><span class="hljs-number">192.168</span></span><span class="hljs-number"><span class="hljs-number">.1</span></span><span class="hljs-number"><span class="hljs-number">.2</span></span>:<span class="hljs-number"><span class="hljs-number">8009</span></span> route=node2 ProxySet stickysession=ROUTEID &lt;/Proxy&gt; &lt;<span class="hljs-keyword"><span class="hljs-keyword">Location</span></span> /&gt; ProxyPass balancer://ajp-<span class="hljs-keyword"><span class="hljs-keyword">cluster</span></span>/ &lt;/<span class="hljs-keyword"><span class="hljs-keyword">Location</span></span>&gt; &lt;/VirtualHost&gt;</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <i>192.168.1.0の</i>代わりに、Apacheアドレスを指定します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      [ <b>プロキシ]</b>セクションで、クラスターノードのAJPコネクターのアドレスのリストを指定します。ノードごとに<b>BalancerMember</b>が1回出現します。  JBoss 7構成では、デフォルトで、AJPコネクターはポート8009でリッスンします。 <b>ルート</b>パラメーターは、Apache自体でのみ使用される一意のホスト名を割り当てます。  JBossの開始時に指定された名前（ <i>パラメーターjboss.node.name</i> ）と一致する必要はありません。 これ以上変更する必要はありません;クラスターは起動とテストの準備ができています。 <div class="spoiler">  <b class="spoiler_title">構成の詳細</b> <div class="spoiler_text">  <b>Header add Set-Cookie</b>ディレクティブは、次のように<b>ProxySet stickysession</b>ディレクティブと連携して<b>機能</b>します。 クライアントが最初にApacheを呼び出すときに、バランサーがリダイレクト先のノードを選択した後、「 <b>ROUTEID</b> 」という名前のCookieがユーザーセッションに追加され、その値は選択したノードの識別子（上記の構成のnode1 / node2）です。 その後のクライアント呼び出しで、Apacheは以前にどのノードが選択されたかを「考える」必要がなくなり、CookieはリクエストをリダイレクトするノードにWebサーバーに明示的に指示します。  Headerディレクティブはセッション内のCookieの存在を担当し、ProxySet stickysessionディレクティブはセッションを特定のノードに「固定」するためにルーティングするときに使用します。 サーバーがセッションで機能しない場合（たとえば、上の例のようにWebサービスのみ）、HeaderおよびProxySetディレクティブは必要ありません。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    </div></div><div class="spoiler">  <b class="spoiler_title">ジョシオニド</b> <div class="spoiler_text"> 多くの構成例では、セッション識別子JSESSIONIDをノードマーカーとして使用することをお勧めします。 これは論理的なようです、なぜなら この識別子は、ほとんどのJava Webアプリケーションで使用されます。  <a href="httpd.apache.org/docs/2.2/mod/mod_proxy_balancer.html">apache.orgの</a>例： <pre> <code class="hljs nginx"><span class="hljs-attribute"><span class="hljs-attribute">ProxyPass</span></span> /test balancer://mycluster stickysession=JSESSIONID|jsessionid scolonpathdelim=On &lt;Proxy balancer://mycluster&gt; BalancerMember http://192.168.1.50:80 route=node1 BalancerMember http://192.168.1.51:80 route=node2 &lt;/Proxy&gt;</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> すぐに言っておく必要があります。JBossの場合、これは少なくともデフォルトの構成では機能しません。 このメソッドは、アプリケーションのサーバー側で形成されるJSESSIONIDという名前のCookie値が2つの部分で構成されていることを前提としています。セッションIDはサーバーIDで補完され、ドットで区切られます。  JBoss 7は、セッションIDのみを含む単純なクッキーJSESSIONIDを形成します。セッションIDの値はランダムに生成され、意味を持ちません。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     したがって、説明した構成との主な違いは次のとおりです。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li> この記事で説明されている構成では、ノード識別子とセッション識別子は異なるCookieにあります。ここでは、2つの値が1つのCookieに結合されています。 </li><li> この記事で説明されている構成では、ノード識別子はバランサーの側で形成され（論理的です：使用者は誰でも）、アプリケーションサーバー側のセッション識別子（同じ原則：セッション識別子はApacheではなくJBossで必要です）。 ここでは、両方の値がアプリケーションのサーバー側（またはバックエンドのWebサーバー）で生成されます。 </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    </div></div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    </li></ol>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h5>  SSLセットアップ（HTTPS） </h5>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     クラスタリングの前に、クライアントとデータを交換するときに暗号化を使用し、HTTPSプロトコルを使用してクライアントと通信した場合、HTTPSコネクターの構成でJBoss側で証明書設定が実行されました。 クラスター化されたソリューションに移行する場合、Apacheは証明書を管理する必要があります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <div class="spoiler">  <b class="spoiler_title">一般原則</b> <div class="spoiler_text"> プロセスは次のとおりです。クライアントからのHTTPSリクエストは、AJPプロトコルを使用して、Apache Webサーバーに送信され、復号化され、クリア形式でアプリケーションサーバーに送信されます。 アプリケーションサーバーからの応答もWebサーバーに平文で送信され、そこで暗号化され、HTTPSプロトコルを介してクライアントに送信されます。 したがって、ApacheとJBossの間には、いわゆる「非武装地帯」があります。 外部の不正アクセスから閉じられ、アプリケーションレベルで不正アクセスに対する追加の保護を必要としないサーバー間に信頼関係が確立される環境。  HTTPSポート（通常は443）を介して外部からアクセスできるのはApacheのみであり、他のすべては密に閉じる必要があります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/storage2/188/15c/553/18815c5531b24463569005dd8a89738d.png"></div>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    </div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      conf / httpd.confのWebサーバー設定： 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ol><li>  <b>ポート443盗聴</b> 。 デフォルト設定のApache Webサーバーは、ポート80のみをリッスンします。ポート443をリッスンするには、次の行を追加します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="hljs pgsql"><span class="hljs-keyword"><span class="hljs-keyword">Listen</span></span> <span class="hljs-number"><span class="hljs-number">443</span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> </li><li>  <b>モジュールの接続</b> 。 次の行をコメント解除するか、追加します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="hljs nginx"><span class="hljs-attribute"><span class="hljs-attribute">LoadModule</span></span> ssl_module modules/mod_ssl.so</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    </li><li>  <b>バランス調整</b> 。 次の行を追加します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="hljs nginx"><span class="hljs-attribute"><span class="hljs-attribute">NameVirtualHost</span></span> <span class="hljs-number"><span class="hljs-number">192.168.1.0:443</span></span> &lt;VirtualHost <span class="hljs-number"><span class="hljs-number">192.168.1.0:443</span></span>&gt; Header add Set-Cookie <span class="hljs-string"><span class="hljs-string">"ROUTEID=.%{BALANCER_WORKER_ROUTE}e; path=/"</span></span> env=BALANCER_ROUTE_CHANGED &lt;Proxy balancer://ajp-cluster&gt; BalancerMember ajp://192.168.1.1:8009 route=node1 BalancerMember ajp://192.168.1.2:8009 route=node2 ProxySet stickysession=ROUTEID &lt;/Proxy&gt; &lt;Location /&gt; ProxyPass balancer://ajp-cluster/ &lt;/Location&gt; ProxyRequests <span class="hljs-literal"><span class="hljs-literal">off</span></span> SSLEngine <span class="hljs-literal"><span class="hljs-literal">on</span></span> SSLCertificateFile c:/Apache2/conf/my.cer SSLCertificateKeyFile c:/Apache2/conf/my.key &lt;/VirtualHost&gt;</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    </li></ol>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     前の構成に加えて、ここでは、サーバーがトラフィックの暗号化に使用する証明書と秘密キーへのパスを指定する必要があります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Apache 2.2の設定は上記のバージョン2.4以降で説明されており、mod_lbmethod_byrequests.soおよびmod_slotmem_shm.soモジュールを追加し、NameVirtualHost宣言を削除します。これらは不要になりました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <div class="spoiler">  <b class="spoiler_title">証明書の問題とその解決策</b> <div class="spoiler_text">  JBoss側で暗号化を設定する場合、たとえばPKCS＃12形式のキーと証明書を含む1つのファイルが必要でした。  Apacheでは、2つのファイルに分割する必要があります。1つのファイルには証明書があり、もう1つのファイルには秘密鍵があります。 さらに、Apacheには2つの制限があります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ol><li>  PEM形式のみが認識されます。 キーファイルをテキストエディタで開くと、キーがこの形式に一致するかどうかを確認できます。 コンテンツには「----- BEGIN PRIVATE KEY -----」および「----- END PRIVATE KEY -----」という行が含まれている必要があり、それらの間の行の長さは64文字を超えてはなりません。 同じことが<b>証明書に</b>も適用され、それぞれ「----- BEGIN CERTIFICATE -----」および「----- END CERTIFICATE -----」の文字列が使用されます。 </li><li>  WindowsでApacheをビルドすることは、パスワードで保護されたキーストアを開く方法を知りません。 </li></ol>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     上記の問題はすべて、 <a href="http://slproweb.com/products/Win32OpenSSL.html">Openssl</a>ユーティリティを使用して解決されます。  JBossで使用されるキーと証明書のストレージファイルから、キーと証明書を個別のファイルに抽出し、必要な形式に変換してパスワード保護を解除する必要があります。  PKCS＃12形式からキーを変換する例を次に示します（他の形式もサポートされています。Googleがお手伝いします）。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="hljs tex">openssl pkcs12 -nocerts -nodes -in C:<span class="hljs-tag"><span class="hljs-tag">\</span><span class="hljs-name"><span class="hljs-tag"><span class="hljs-name">key</span></span></span></span>.p12 -out C:<span class="hljs-tag"><span class="hljs-tag">\</span><span class="hljs-name"><span class="hljs-tag"><span class="hljs-name">Apache</span></span></span></span>2<span class="hljs-tag"><span class="hljs-tag">\</span><span class="hljs-name"><span class="hljs-tag"><span class="hljs-name">conf</span></span></span></span><span class="hljs-tag"><span class="hljs-tag">\</span><span class="hljs-name"><span class="hljs-tag"><span class="hljs-name">my</span></span></span></span>.key openssl pkcs12 -clcerts -nokeys -nodes -in C:<span class="hljs-tag"><span class="hljs-tag">\</span><span class="hljs-name"><span class="hljs-tag"><span class="hljs-name">key</span></span></span></span>.p12 -out C:<span class="hljs-tag"><span class="hljs-tag">\</span><span class="hljs-name"><span class="hljs-tag"><span class="hljs-name">Apache</span></span></span></span>2<span class="hljs-tag"><span class="hljs-tag">\</span><span class="hljs-name"><span class="hljs-tag"><span class="hljs-name">conf</span></span></span></span><span class="hljs-tag"><span class="hljs-tag">\</span><span class="hljs-name"><span class="hljs-tag"><span class="hljs-name">my</span></span></span></span>.cer</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <b>注意！</b> 受信したmy.keyファイルを産業用サーバーに転送した後、コンピューターから削除することを忘れないでください。 彼は何によっても保護されておらず、侵害される可能性があります。 </div></div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h5> おわりに </h5>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     記事に記載されているソリューションを適用した後、原則として、JBoss設定からHTTP / HTTPSコネクターの説明を不要として削除できます。 これで、すべての外部コールはAJPコネクタを介して着信します。 これにより、特にこれらのプロトコルに特に注意を払うスキャンユーティリティの場合、サーバーのセキュリティが大幅に向上します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h5>  PS </h5>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     提案されたクラスタリングオプションは、負荷分散とフォールトトレランスの問題を部分的に解決します。 本格的な構成の場合、DBMSクラスタリングと単一のエントリポイントであるApacheの複製では不十分です。 ネットワークとルーターの複製、サーバーコンポーネント、無停電電源装置など、ハードウェアインフラストラクチャの構成も非常に重要です。 それでも、この記事は80/20の原則に従ってシステムを開発するのに役立ちます。 低コストで、生産性と耐障害性が大幅に向上します。 私の練習では、DBMSのクラスタリングがあったことを除いて、さらに進んだソリューションに出会うことができませんでしたが、たまたま遭遇した場合、それについて書きます。 サービスが非常に重要な場合、私が提案したソリューションは最初のステップにすぎません。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Habrにも<a href="http://habrahabr.ru/post/129377/">同様の記事</a>がありますが、 <a href="http://habrahabr.ru/post/129377/">これについて</a>もよく理解することをお勧めします。 テーマの類似性にもかかわらず、私の記事は著しく異なり、私の意見では、存在するすべての権利を持っています。 私は、すべてがどのように機能するのか、そして構成とバッチファイルの内容がそこに単純に配置されていることについて明快に話そうとしました。 さらに、参照による記事では、Apache <b>mod_jkが</b>バランシングに使用されているため、 <b>mod_proxyがあり</b>ます。  Stackoverflow <a href="http://stackoverflow.com/questions/1081918/apache-to-tomcat-mod-jk-vs-mod-proxy">は</a> 、mod_jkの主な欠点は「 <i>別個のモジュールを構築および保守する必要</i>がある」と<a href="http://stackoverflow.com/questions/1081918/apache-to-tomcat-mod-jk-vs-mod-proxy">書い</a>ています。 これはシステム管理者が実際に直面したもので、AIXのApacheにこのモジュールをインストールできなかったため、同様の問題がある場合は、mod_proxyを試すことができます。mod_proxyはApacheにバンドルされており、 。 </div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+<section class="more-articles-navigation-panel js-more-articles-navigation-panel">
+<h4>More articles:</h4>
+<nav class="list-of-articles-container js-list-of-articles-container"><ul class="list-of-pages js-list-of-pages">
+<li><a href="../J190186/index.html">Perl6-オペレーターのオーバーロード</a></li>
+<li><a href="../J190188/index.html">これが私たちのせいです...</a></li>
+<li><a href="../J190190/index.html">Ubi InteractiveとMicrosoftの開発により、あらゆる表面がタッチスクリーンに変わります</a></li>
+<li><a href="../J190192/index.html">会社の従業員の長期労働の条件。 ケースNotamedia</a></li>
+<li><a href="../J190194/index.html">GitHubの新しいトレンドページ</a></li>
+<li><a href="../J190200/index.html">Test.it v1.1.0がリリースされました-次は何ですか？</a></li>
+<li><a href="../J19021/index.html">MS Empowerイニシアチブ</a></li>
+<li><a href="../J190210/index.html">「チェリャビンスクmet石」の崩壊の結果：NASAのビデオモデル</a></li>
+<li><a href="../J190216/index.html">退屈なプロジェクトで何をしますか？</a></li>
+<li><a href="../J190218/index.html">グラスホッパーロケットは、250 mで100 mのオフセットで正常に離陸しました。</a></li>
+</ul></nav>
+</section><br />
+<a href="../../allArticles.html"><strong>All Articles</strong></a>
+<script src="../../js/main.js"></script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript" >
+  (function (d, w, c) {
+      (w[c] = w[c] || []).push(function() {
+          try {
+              w.yaCounter70218013 = new Ya.Metrika({
+                  id:70218013,
+                  clickmap:true,
+                  trackLinks:true,
+                  accurateTrackBounce:true,
+                  webvisor:true
+              });
+          } catch(e) { }
+      });
+
+      var n = d.getElementsByTagName("script")[0],
+          s = d.createElement("script"),
+          f = function () { n.parentNode.insertBefore(s, n); };
+      s.type = "text/javascript";
+      s.async = true;
+      s.src = "https://mc.yandex.ru/metrika/watch.js";
+
+      if (w.opera == "[object Opera]") {
+          d.addEventListener("DOMContentLoaded", f, false);
+      } else { f(); }
+  })(document, window, "yandex_metrika_callbacks");
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/70218013" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+
+<!-- Google Analytics -->
+  <script>
+    window.ga = function () { ga.q.push(arguments) }; ga.q = []; ga.l = +new Date;
+    ga('create', 'G-FEDBM7F51Q', 'auto'); ga('send', 'pageview')
+  </script>
+  <script src="https://www.google-analytics.com/analytics.js" async defer></script>
+
+</section>
+
+<footer class="page-footer">
+  <div class="page-footer-legal-info-container page-footer-element">
+    <p>
+      Clever Geek | <span class="page-footer-legal-info-year js-page-footer-legal-info-year">2020</span>
+    </p>
+  </div>
+  <div class="page-footer-counters-container page-footer-element">
+    <div class="company-info js-company-info" itemscope="" itemtype="http://schema.org/Organization">
+      <span itemprop="name">Western Town Media (WTM)</span>
+      <div itemprop="address" itemscope="" itemtype="http://schema.org/PostalAddress">
+        <span itemprop="streetAddress">1968 Stoney Lonesome Road</span>
+        <br>
+        <span itemprop="postalCode">PA 18640</span>
+        <span itemprop="addressLocality">Pittston, USA</span>
+      </div>
+      <span itemprop="telephone">570-362-1316</span>
+    </div>
+    <script type="application/ld+json">
+      {
+        "@context": "http://schema.org",
+        "@type": "Organization",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Pittston, USA",
+          "postalCode": "PA 18640",
+          "streetAddress": "1968 Stoney Lonesome Road"
+        },
+        "name": "Western Town Media (WTM)",
+        "telephone": "570-362-1316"
+      }
+    </script>
+  </div>
+</footer>
+  
+</body>
+
+</html>
