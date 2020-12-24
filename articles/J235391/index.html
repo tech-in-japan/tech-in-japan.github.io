@@ -1,0 +1,529 @@
+<!doctype html>
+<html class="no-js" lang="en">
+
+<head>
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-FEDBM7F51Q"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-FEDBM7F51Q');
+  </script>
+
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <title>👎🏾 👋🏿 💭 CUDAでの同時バブルソート 🚝 🖖🏻 🖋️</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <meta name="description" content="こんにちは、Habr。 CUDAプラットフォームで比較的簡単な実装と高性能を備えた並列ソートが必要になると思いました。 これはバブルソートです。 猫の下には説明とコードがあり、役に立つかもしれません（またはそうでないかもしれません...）。 すぐに、提示されたプログラムはGPUとCPUのパフォーマン...">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml"/>
+
+  <link rel="stylesheet" href="../../css/main.css">
+
+  <link href="https://fonts.googleapis.com/css?family=Quicksand&display=swap" rel="stylesheet">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+  <script>document.write('<script src="https://pagea' + 'd2.googles' + 'yndication.com/pagea' + 'd/js/a' + 'dsby' + 'google.js"><\/script>')</script>
+  <script>
+        var superSpecialObject = {};
+        superSpecialObject['google_a' + 'd_client'] = 'ca-p' + 'ub-6974184241884155';
+        superSpecialObject['enable_page_level_a' + 'ds'] = true;
+       (window['a' + 'dsbygoogle'] = window['a' + 'dsbygoogle'] || []).push(superSpecialObject);
+  </script>
+</head>
+
+<body>
+  <!--[if lte IE 9]>
+    <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience and security.</p>
+  <![endif]-->
+  <header class="page-header js-page-header">
+    <a class="page-header-logo-container" href="https://tech-in-japan.github.io/index.html"></a>
+    <div class="page-header-text">Clever Geek Handbook</div>
+  </header>
+  <section class="page js-page"><h1>CUDAでの同時バブルソート</h1><div class="post__text post__text-html js-mediator-article" id="post-content-body"> こんにちは、Habr。  CUDAプラットフォームで比較的簡単な実装と高性能を備えた並列ソートが必要になると思いました。 これはバブルソートです。 猫の下には説明とコードがあり、役に立つかもしれません（またはそうでないかもしれません...）。 すぐに、提示されたプログラムはGPUとCPUのパフォーマンスの比較におけるベンチマークであることを言わなければなりません。 読者を気にしない場合は、コンパイルして、計算結果をこの記事のコメントに入れてください。 これは科学用ではありません。 ただ面白い=） 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <a name="habracut"></a>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2> 少し思い出させてください </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     バブルソート方法の本質は、要素をペアワイズで比較し、ソートの方向に応じて特定の条件が満たされた場合に要素を置き換えることです。 シングルスレッドモードでのアルゴリズムの反復を以下に示します。整数の増加する配列を降順で並べ替えます（各行は現在の配列の状態です）-これは表1です。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     表2は、マルチスレッドモードでのバブルによる並べ替えの繰り返しを示しています。これは非常に簡単に実装されます。一つなど したがって、配列全体が「ポップアップ」し始め、計算時間が大幅に短縮されます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2> 利益 </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     すでに実行されたアクションの数から、並列ソートの方が速いことがわかります。 ただし、常にそうとは限りません。小さなサイズの配列では、データ転送に問題がないため、シングルスレッドモードの方が高速です。 ここでいくつかのテスト計算を行いましたが、結果は次のとおりです。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/getpro/habr/post_images/afe/f46/995/afef469953f65aa7add3960b3fa3692a.png" alt="画像">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h3> 横軸は要素の数、縦軸は秒単位の実行時間です。 </h3>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2> 実装 </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      CUDA C言語の実装コードを提供します。CUDAC言語には、CUDAとCPU（シングルスレッドモード）でSECURITY SECURITYソートを実行するコードが含まれています。 実際、これは、ビデオカードとプロセスでスマートソートがどのように機能するかについてのコンピューターのベンチマークです。 このプログラムの一部は、CUDAプラットフォーム上のビデオカードの並べ替え機能です。これは、基本的なcopy'n'pastを使用して、傑作の健康に使用できます。 コードは表の下に表示されます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2> コンパイル方法??? </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     さて、このためには、NVIDIAのWebサイトからCUDAのドライバーをダウンロードし、インストールし、Nvidia Toolkitをダウンロードし、Nvidia SDKをインストールし、インストールする必要があります。 幸いなことに、すべてがすでに1つのパッケージに含まれています。 要望があればCUDAをインストールする方法を書きますが、初心者の方には幸運を祈っています。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     すべての準備が整い、nvidia CUDAがコンピューターで動作するようになったら、main.cuファイル（またはそこで呼び出されたもの）をコンパイルして、プログラムを実行し、結果を取得して、ここに配置します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     ワット、それは今のところ、読んでくれてありがとう。 じゃあね 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      PSアルゴリズムを高速化する方法を教えていただければ幸いです=） 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2> 表1：シングルソートバブルソート </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <table border="1"><tbody><tr><td>  0 </td><td>  1 </td><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  <b>1</b> </td><td>  <b>0</b> </td><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  1 </td><td>  <b>2</b> </td><td>  <b>0</b> </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  1 </td><td>  2 </td><td>  <b>3</b> </td><td>  <b>0</b> </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  1 </td><td>  2 </td><td>  3 </td><td>  <b>4</b> </td><td>  <b>0</b> </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  1 </td><td>  2 </td><td>  3 </td><td>  4 </td><td>  <b>5</b> </td><td>  <b>0</b> </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  1 </td><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  <b>6</b> </td><td>  <b>0</b> </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  1 </td><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  <b>7</b> </td><td>  <b>0</b> </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  1 </td><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  <b>8</b> </td><td>  <b>0</b> </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  1 </td><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  <b>9</b> </td><td>  <b>0</b> </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  1 </td><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  <b>10</b> </td><td>  <b>0</b> </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  1 </td><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  <b>11</b> </td><td>  <b>0</b> </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  1 </td><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  <b>12</b> </td><td>  <b>0</b> </td><td>  13 </td><td>  14 </td></tr><tr><td>  1 </td><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  <b>13</b> </td><td>  <b>0</b> </td></tr><tr><td>  1 </td><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  <b>14</b> </td><td>  <b>0</b> </td></tr><tr><td>  1 </td><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  <b>2</b> </td><td>  <b>1</b> </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  0 </td></tr><tr><td>  2 </td><td>  <b>3</b> </td><td>  <b>1</b> </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  0 </td></tr><tr><td>  2 </td><td>  3 </td><td>  <b>4</b> </td><td>  <b>1</b> </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  0 </td></tr><tr><td>  2 </td><td>  3 </td><td>  4 </td><td>  <b>5</b> </td><td>  <b>1</b> </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  0 </td></tr><tr><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  <b>6</b> </td><td>  <b>1</b> </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  0 </td></tr><tr><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  <b>7</b> </td><td>  <b>1</b> </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  0 </td></tr><tr><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  <b>8</b> </td><td>  <b>1</b> </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  0 </td></tr><tr><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  <b>9</b> </td><td>  <b>1</b> </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  0 </td></tr><tr><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  <b>10</b> </td><td>  <b>1</b> </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  0 </td></tr><tr><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  <b>11</b> </td><td>  <b>1</b> </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  0 </td></tr><tr><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  <b>12</b> </td><td>  <b>1</b> </td><td>  13 </td><td>  14 </td><td>  0 </td></tr><tr><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  <b>13</b> </td><td>  <b>1</b> </td><td>  14 </td><td>  0 </td></tr><tr><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  <b>14</b> </td><td>  <b>1</b> </td></tr><tr><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  <b>3</b> </td><td>  <b>2</b> </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  1 </td><td>  0 </td></tr><tr><td>  3 </td><td>  <b>4</b> </td><td>  <b>2</b> </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  1 </td><td>  0 </td></tr><tr><td>  3 </td><td>  4 </td><td>  <b>5</b> </td><td>  <b>2</b> </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  1 </td><td>  0 </td></tr><tr><td>  3 </td><td>  4 </td><td>  5 </td><td>  <b>6</b> </td><td>  <b>2</b> </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  1 </td><td>  0 </td></tr><tr><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  <b>7</b> </td><td>  <b>2</b> </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  1 </td><td>  0 </td></tr><tr><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  <b>8</b> </td><td>  <b>2</b> </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  1 </td><td>  0 </td></tr><tr><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  <b>9</b> </td><td>  <b>2</b> </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  1 </td><td>  0 </td></tr><tr><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  <b>10</b> </td><td>  <b>2</b> </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  1 </td><td>  0 </td></tr><tr><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  <b>11</b> </td><td>  <b>2</b> </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  1 </td><td>  0 </td></tr><tr><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  <b>12</b> </td><td>  <b>2</b> </td><td>  13 </td><td>  14 </td><td>  1 </td><td>  0 </td></tr><tr><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  <b>13</b> </td><td>  <b>2</b> </td><td>  14 </td><td>  1 </td><td>  0 </td></tr><tr><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  <b>14</b> </td><td>  <b>2</b> </td><td>  1 </td><td>  0 </td></tr><tr><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  <b>4</b> </td><td>  <b>3</b> </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  4 </td><td>  <b>5</b> </td><td>  <b>3</b> </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  4 </td><td>  5 </td><td>  <b>6</b> </td><td>  <b>3</b> </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  4 </td><td>  5 </td><td>  6 </td><td>  <b>7</b> </td><td>  <b>3</b> </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  <b>8</b> </td><td>  <b>3</b> </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  <b>9</b> </td><td>  <b>3</b> </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  <b>10</b> </td><td>  <b>3</b> </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  <b>11</b> </td><td>  <b>3</b> </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  <b>12</b> </td><td>  <b>3</b> </td><td>  13 </td><td>  14 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  <b>13</b> </td><td>  <b>3</b> </td><td>  14 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  <b>14</b> </td><td>  <b>3</b> </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  1 </td><td>  0 </td></tr><tr><td>  <b>5</b> </td><td>  <b>4</b> </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  5 </td><td>  <b>6</b> </td><td>  <b>4</b> </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  5 </td><td>  6 </td><td>  <b>7</b> </td><td>  <b>4</b> </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  5 </td><td>  6 </td><td>  7 </td><td>  <b>8</b> </td><td>  <b>4</b> </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  <b>9</b> </td><td>  <b>4</b> </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  <b>10</b> </td><td>  <b>4</b> </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  <b>11</b> </td><td>  <b>4</b> </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  <b>12</b> </td><td>  <b>4</b> </td><td>  13 </td><td>  14 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  <b>13</b> </td><td>  <b>4</b> </td><td>  14 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  <b>14</b> </td><td>  <b>4</b> </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  <b>6</b> </td><td>  <b>5</b> </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  6 </td><td>  <b>7</b> </td><td>  <b>5</b> </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  6 </td><td>  7 </td><td>  <b>8</b> </td><td>  <b>5</b> </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  6 </td><td>  7 </td><td>  8 </td><td>  <b>9</b> </td><td>  <b>5</b> </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  <b>10</b> </td><td>  <b>5</b> </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  <b>11</b> </td><td>  <b>5</b> </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  <b>12</b> </td><td>  <b>5</b> </td><td>  13 </td><td>  14 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  <b>13</b> </td><td>  <b>5</b> </td><td>  14 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  <b>14</b> </td><td>  <b>5</b> </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  <b>7</b> </td><td>  <b>6</b> </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  7 </td><td>  <b>8</b> </td><td>  <b>6</b> </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  7 </td><td>  8 </td><td>  <b>9</b> </td><td>  <b>6</b> </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  7 </td><td>  8 </td><td>  9 </td><td>  <b>10</b> </td><td>  <b>6</b> </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  <b>11</b> </td><td>  <b>6</b> </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  <b>12</b> </td><td>  <b>6</b> </td><td>  13 </td><td>  14 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  <b>13</b> </td><td>  <b>6</b> </td><td>  14 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  <b>14</b> </td><td>  <b>6</b> </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  <b>8</b> </td><td>  <b>7</b> </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  8 </td><td>  <b>9</b> </td><td>  <b>7</b> </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  8 </td><td>  9 </td><td>  <b>10</b> </td><td>  <b>7</b> </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  8 </td><td>  9 </td><td>  10 </td><td>  <b>11</b> </td><td>  <b>7</b> </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  <b>12</b> </td><td>  <b>7</b> </td><td>  13 </td><td>  14 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  <b>13</b> </td><td>  <b>7</b> </td><td>  14 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  <b>14</b> </td><td>  <b>7</b> </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  <b>9</b> </td><td>  <b>8</b> </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  9 </td><td>  <b>10</b> </td><td>  <b>8</b> </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  9 </td><td>  10 </td><td>  <b>11</b> </td><td>  <b>8</b> </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  9 </td><td>  10 </td><td>  11 </td><td>  <b>12</b> </td><td>  <b>8</b> </td><td>  13 </td><td>  14 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  <b>13</b> </td><td>  <b>8</b> </td><td>  14 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  <b>14</b> </td><td>  <b>8</b> </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  <b>10</b> </td><td>  <b>9</b> </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  10 </td><td>  <b>11</b> </td><td>  <b>9</b> </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  10 </td><td>  11 </td><td>  <b>12</b> </td><td>  <b>9</b> </td><td>  13 </td><td>  14 </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  10 </td><td>  11 </td><td>  12 </td><td>  <b>13</b> </td><td>  <b>9</b> </td><td>  14 </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  <b>14</b> </td><td>  <b>9</b> </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  <b>11</b> </td><td>  <b>10</b> </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  9 </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  11 </td><td>  <b>12</b> </td><td>  <b>10</b> </td><td>  13 </td><td>  14 </td><td>  9 </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  11 </td><td>  12 </td><td>  <b>13</b> </td><td>  <b>10</b> </td><td>  14 </td><td>  9 </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  11 </td><td>  12 </td><td>  13 </td><td>  <b>14</b> </td><td>  <b>10</b> </td><td>  9 </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  <b>12</b> </td><td>  <b>11</b> </td><td>  13 </td><td>  14 </td><td>  10 </td><td>  9 </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  12 </td><td>  <b>13</b> </td><td>  <b>11</b> </td><td>  14 </td><td>  10 </td><td>  9 </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  12 </td><td>  13 </td><td>  <b>14</b> </td><td>  <b>11</b> </td><td>  10 </td><td>  9 </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  12 </td><td>  13 </td><td>  14 </td><td>  9 </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  <b>13</b> </td><td>  <b>12</b> </td><td>  14 </td><td>  11 </td><td>  10 </td><td>  9 </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  13 </td><td>  <b>14</b> </td><td>  <b>12</b> </td><td>  11 </td><td>  10 </td><td>  9 </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  13 </td><td>  14 </td><td>  10 </td><td>  9 </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  <b>14</b> </td><td>  <b>13</b> </td><td>  12 </td><td>  11 </td><td>  10 </td><td>  9 </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr></tbody></table>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2> 表2：マルチスレッドモードでのバブルソート </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <table border="1"><tbody><tr><td>  0 </td><td>  1 </td><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  0 </td><td>  1 </td><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  0 </td><td>  1 </td><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  1 </td><td>  0 </td><td>  2 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  1 </td><td>  2 </td><td>  0 </td><td>  3 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  2 </td><td>  1 </td><td>  3 </td><td>  0 </td><td>  4 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  2 </td><td>  3 </td><td>  1 </td><td>  4 </td><td>  0 </td><td>  5 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  3 </td><td>  2 </td><td>  4 </td><td>  1 </td><td>  5 </td><td>  0 </td><td>  6 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  3 </td><td>  4 </td><td>  2 </td><td>  5 </td><td>  1 </td><td>  6 </td><td>  0 </td><td>  7 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  4 </td><td>  3 </td><td>  5 </td><td>  2 </td><td>  6 </td><td>  1 </td><td>  7 </td><td>  0 </td><td>  8 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  4 </td><td>  5 </td><td>  3 </td><td>  6 </td><td>  2 </td><td>  7 </td><td>  1 </td><td>  8 </td><td>  0 </td><td>  9 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  5 </td><td>  4 </td><td>  6 </td><td>  3 </td><td>  7 </td><td>  2 </td><td>  8 </td><td>  1 </td><td>  9 </td><td>  0 </td><td>  10 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  5 </td><td>  6 </td><td>  4 </td><td>  7 </td><td>  3 </td><td>  8 </td><td>  2 </td><td>  9 </td><td>  1 </td><td>  10 </td><td>  0 </td><td>  11 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  6 </td><td>  5 </td><td>  7 </td><td>  4 </td><td>  8 </td><td>  3 </td><td>  9 </td><td>  2 </td><td>  10 </td><td>  1 </td><td>  11 </td><td>  0 </td><td>  12 </td><td>  13 </td><td>  14 </td></tr><tr><td>  6 </td><td>  7 </td><td>  5 </td><td>  8 </td><td>  4 </td><td>  9 </td><td>  3 </td><td>  10 </td><td>  2 </td><td>  11 </td><td>  1 </td><td>  12 </td><td>  0 </td><td>  13 </td><td>  14 </td></tr><tr><td>  7 </td><td>  6 </td><td>  8 </td><td>  5 </td><td>  9 </td><td>  4 </td><td>  10 </td><td>  3 </td><td>  11 </td><td>  2 </td><td>  12 </td><td>  1 </td><td>  13 </td><td>  0 </td><td>  14 </td></tr><tr><td>  7 </td><td>  8 </td><td>  6 </td><td>  9 </td><td>  5 </td><td>  10 </td><td>  4 </td><td>  11 </td><td>  3 </td><td>  12 </td><td>  2 </td><td>  13 </td><td>  1 </td><td>  14 </td><td>  0 </td></tr><tr><td>  8 </td><td>  7 </td><td>  9 </td><td>  6 </td><td>  10 </td><td>  5 </td><td>  11 </td><td>  4 </td><td>  12 </td><td>  3 </td><td>  13 </td><td>  2 </td><td>  14 </td><td>  1 </td><td>  0 </td></tr><tr><td>  8 </td><td>  9 </td><td>  7 </td><td>  10 </td><td>  6 </td><td>  11 </td><td>  5 </td><td>  12 </td><td>  4 </td><td>  13 </td><td>  3 </td><td>  14 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  9 </td><td>  8 </td><td>  10 </td><td>  7 </td><td>  11 </td><td>  6 </td><td>  12 </td><td>  5 </td><td>  13 </td><td>  4 </td><td>  14 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  9 </td><td>  10 </td><td>  8 </td><td>  11 </td><td>  7 </td><td>  12 </td><td>  6 </td><td>  13 </td><td>  5 </td><td>  14 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  10 </td><td>  9 </td><td>  11 </td><td>  8 </td><td>  12 </td><td>  7 </td><td>  13 </td><td>  6 </td><td>  14 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  10 </td><td>  11 </td><td>  9 </td><td>  12 </td><td>  8 </td><td>  13 </td><td>  7 </td><td>  14 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  11 </td><td>  10 </td><td>  12 </td><td>  9 </td><td>  13 </td><td>  8 </td><td>  14 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  11 </td><td>  12 </td><td>  10 </td><td>  13 </td><td>  9 </td><td>  14 </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  12 </td><td>  11 </td><td>  13 </td><td>  10 </td><td>  14 </td><td>  9 </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  12 </td><td>  13 </td><td>  11 </td><td>  14 </td><td>  10 </td><td>  9 </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  13 </td><td>  12 </td><td>  14 </td><td>  11 </td><td>  10 </td><td>  9 </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  13 </td><td>  14 </td><td>  12 </td><td>  11 </td><td>  10 </td><td>  9 </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  14 </td><td>  13 </td><td>  12 </td><td>  11 </td><td>  10 </td><td>  9 </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr><tr><td>  14 </td><td>  13 </td><td>  12 </td><td>  11 </td><td>  10 </td><td>  9 </td><td>  8 </td><td>  7 </td><td>  6 </td><td>  5 </td><td>  4 </td><td>  3 </td><td>  2 </td><td>  1 </td><td>  0 </td></tr></tbody></table>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2> コード： </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre><code class="hljs vbscript">#include &lt;stdio.h&gt; #include &lt;<span class="hljs-built_in"><span class="hljs-built_in">time</span></span>.h&gt; __global__ void bubbleMove(<span class="hljs-built_in"><span class="hljs-built_in">int</span></span> *array_device, <span class="hljs-built_in"><span class="hljs-built_in">int</span></span> N, <span class="hljs-built_in"><span class="hljs-built_in">int</span></span> <span class="hljs-keyword"><span class="hljs-keyword">step</span></span>){ <span class="hljs-built_in"><span class="hljs-built_in">int</span></span> idx = blockDim.x * blockIdx.x + threadIdx.x; <span class="hljs-keyword"><span class="hljs-keyword">if</span></span> (idx&lt;(N<span class="hljs-number"><span class="hljs-number">-1</span></span>)) { <span class="hljs-keyword"><span class="hljs-keyword">if</span></span> (<span class="hljs-keyword"><span class="hljs-keyword">step</span></span><span class="hljs-number"><span class="hljs-number">-2</span></span>&gt;=idx){ <span class="hljs-keyword"><span class="hljs-keyword">if</span></span> (array_device[idx]&lt;array_device[idx+<span class="hljs-number"><span class="hljs-number">1</span></span>]){ <span class="hljs-built_in"><span class="hljs-built_in">int</span></span> buffer = array_device[idx]; array_device[idx]=array_device[idx+<span class="hljs-number"><span class="hljs-number">1</span></span>]; array_device[idx+<span class="hljs-number"><span class="hljs-number">1</span></span>] = buffer; } } } } void bubleSortCUDA(<span class="hljs-built_in"><span class="hljs-built_in">int</span></span> *array_host,<span class="hljs-built_in"><span class="hljs-built_in">int</span></span> N, <span class="hljs-built_in"><span class="hljs-built_in">int</span></span> blockSize){ <span class="hljs-built_in"><span class="hljs-built_in">int</span></span> *array_device; cudaMalloc((void **)&amp;array_device, N * sizeof(<span class="hljs-built_in"><span class="hljs-built_in">int</span></span>)); <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> (<span class="hljs-built_in"><span class="hljs-built_in">int</span></span> i = <span class="hljs-number"><span class="hljs-number">0</span></span>; i &lt; N; i++) array_host[i]=i; cudaMemcpy(array_device,array_host,N*sizeof(<span class="hljs-built_in"><span class="hljs-built_in">int</span></span>),cudaMemcpyHostToDevice); <span class="hljs-built_in"><span class="hljs-built_in">int</span></span> nblocks = N / blockSize+<span class="hljs-number"><span class="hljs-number">1</span></span>; <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> (<span class="hljs-built_in"><span class="hljs-built_in">int</span></span> <span class="hljs-keyword"><span class="hljs-keyword">step</span></span> = <span class="hljs-number"><span class="hljs-number">0</span></span>; <span class="hljs-keyword"><span class="hljs-keyword">step</span></span> &lt;= N+N; <span class="hljs-keyword"><span class="hljs-keyword">step</span></span>++) { bubbleMove&lt;&lt;&lt;nblocks,blockSize&gt;&gt;&gt;(array_device,N,<span class="hljs-keyword"><span class="hljs-keyword">step</span></span>); cudaThreadSynchronize(); } cudaMemcpy(array_host,array_device,N*sizeof(<span class="hljs-built_in"><span class="hljs-built_in">int</span></span>),cudaMemcpyDeviceToHost); cudaFree(array_device); } void bubleSortCPU(<span class="hljs-built_in"><span class="hljs-built_in">int</span></span> *array_host, <span class="hljs-built_in"><span class="hljs-built_in">int</span></span> N){ <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> (<span class="hljs-built_in"><span class="hljs-built_in">int</span></span> i = <span class="hljs-number"><span class="hljs-number">0</span></span>; i &lt; N; i++){ <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> (<span class="hljs-built_in"><span class="hljs-built_in">int</span></span> j = <span class="hljs-number"><span class="hljs-number">0</span></span>; j &lt; Ni<span class="hljs-number"><span class="hljs-number">-1</span></span>; j++) { <span class="hljs-keyword"><span class="hljs-keyword">if</span></span> (array_host[j]&lt;array_host[j+<span class="hljs-number"><span class="hljs-number">1</span></span>]){ <span class="hljs-built_in"><span class="hljs-built_in">int</span></span> buffer = array_host[j]; array_host[j]=array_host[j+<span class="hljs-number"><span class="hljs-number">1</span></span>]; array_host[j+<span class="hljs-number"><span class="hljs-number">1</span></span>] = buffer; } } } } <span class="hljs-built_in"><span class="hljs-built_in">int</span></span> checkArray(<span class="hljs-built_in"><span class="hljs-built_in">int</span></span> *array_host, <span class="hljs-built_in"><span class="hljs-built_in">int</span></span> N){ <span class="hljs-built_in"><span class="hljs-built_in">int</span></span> good=<span class="hljs-number"><span class="hljs-number">1</span></span>; <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> (<span class="hljs-built_in"><span class="hljs-built_in">int</span></span> i = <span class="hljs-number"><span class="hljs-number">0</span></span>; i &lt; N<span class="hljs-number"><span class="hljs-number">-1</span></span>; i++) <span class="hljs-keyword"><span class="hljs-keyword">if</span></span> (array_host[i]&lt;array_host[i+<span class="hljs-number"><span class="hljs-number">1</span></span>]) {good=<span class="hljs-number"><span class="hljs-number">0</span></span>; printf(<span class="hljs-string"><span class="hljs-string">"i=%da=%d\n"</span></span>, i,array_host[i] );} return good; } float measureCUDA(<span class="hljs-built_in"><span class="hljs-built_in">int</span></span> N,<span class="hljs-built_in"><span class="hljs-built_in">int</span></span> blockSize){ <span class="hljs-built_in"><span class="hljs-built_in">int</span></span> *array_host = (<span class="hljs-built_in"><span class="hljs-built_in">int</span></span> *)malloc(N * sizeof(<span class="hljs-built_in"><span class="hljs-built_in">int</span></span>)); <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> (<span class="hljs-built_in"><span class="hljs-built_in">int</span></span> i = <span class="hljs-number"><span class="hljs-number">0</span></span>; i &lt; N; i++) array_host[i]=i; clock_t start = clock(); bubleSortCUDA(array_host,N,blockSize); clock_t <span class="hljs-keyword"><span class="hljs-keyword">end</span></span> = clock(); <span class="hljs-keyword"><span class="hljs-keyword">if</span></span> (checkArray(array_host,N)==<span class="hljs-number"><span class="hljs-number">1</span></span>){ free(array_host); return (float)(<span class="hljs-keyword"><span class="hljs-keyword">end</span></span> - start) / CLOCKS_PER_SEC; } <span class="hljs-keyword"><span class="hljs-keyword">else</span></span> { free(array_host); return <span class="hljs-number"><span class="hljs-number">-1</span></span>; } } float measureCPU(<span class="hljs-built_in"><span class="hljs-built_in">int</span></span> N) { <span class="hljs-built_in"><span class="hljs-built_in">int</span></span> *array_host = (<span class="hljs-built_in"><span class="hljs-built_in">int</span></span> *)malloc(N * sizeof(<span class="hljs-built_in"><span class="hljs-built_in">int</span></span>)); <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> (<span class="hljs-built_in"><span class="hljs-built_in">int</span></span> i = <span class="hljs-number"><span class="hljs-number">0</span></span>; i &lt; N; i++) array_host[i]=i; clock_t start = clock(); bubleSortCPU(array_host,N); clock_t <span class="hljs-keyword"><span class="hljs-keyword">end</span></span> = clock(); <span class="hljs-keyword"><span class="hljs-keyword">if</span></span> (checkArray(array_host,N)==<span class="hljs-number"><span class="hljs-number">1</span></span>){ free(array_host); return (float)(<span class="hljs-keyword"><span class="hljs-keyword">end</span></span> - start) / CLOCKS_PER_SEC; } <span class="hljs-keyword"><span class="hljs-keyword">else</span></span> { free(array_host); return <span class="hljs-number"><span class="hljs-number">-1</span></span>; } } <span class="hljs-built_in"><span class="hljs-built_in">int</span></span> main(<span class="hljs-built_in"><span class="hljs-built_in">int</span></span> argc, char <span class="hljs-keyword"><span class="hljs-keyword">const</span></span> *argv[]) { <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> (<span class="hljs-built_in"><span class="hljs-built_in">int</span></span> i = <span class="hljs-number"><span class="hljs-number">1</span></span>; i &lt; <span class="hljs-number"><span class="hljs-number">10000000</span></span>; i*=<span class="hljs-number"><span class="hljs-number">2</span></span>) printf(<span class="hljs-string"><span class="hljs-string">"%d %f\t%f\n"</span></span>,i, measureCUDA(i,<span class="hljs-number"><span class="hljs-number">256</span></span>),measureCPU (i )); return <span class="hljs-number"><span class="hljs-number">0</span></span>; }</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> </div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+<section class="more-articles-navigation-panel js-more-articles-navigation-panel">
+<h4>More articles:</h4>
+<nav class="list-of-articles-container js-list-of-articles-container"><ul class="list-of-pages js-list-of-pages">
+<li><a href="../J23537/index.html">いい手であげて......</a></li>
+<li><a href="../J235377/index.html">コンバージョンの増加：サイトの直帰率を下げる10の方法</a></li>
+<li><a href="../J235387/index.html">キュラ！ または私の学芸員に</a></li>
+<li><a href="../J235389/index.html">カザンでのKAIエンジニアリングフェスティバルの写真レポート</a></li>
+<li><a href="../J23539/index.html">事業計画-プロジェクトの概要</a></li>
+<li><a href="../J235399/index.html">モスクワ州立大学心理生理学研究所：脳と脳-コンピューターインターフェースのリバースエンジニアリングのツールとしてのEEG</a></li>
+<li><a href="../J2354/index.html">検索エンジンIBMとYahooは、企業市場でGoogleを「プッシュ」します</a></li>
+<li><a href="../J235401/index.html">大都市内の小さな「村」</a></li>
+<li><a href="../J235407/index.html">狂気は強くなっていますか？</a></li>
+<li><a href="../J23541/index.html">HLC MiLeap-インドのライバルASUS eeePC</a></li>
+</ul></nav>
+</section><br />
+<a href="../../allArticles.html"><strong>All Articles</strong></a>
+<script src="../../js/main.js"></script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript" >
+  (function (d, w, c) {
+      (w[c] = w[c] || []).push(function() {
+          try {
+              w.yaCounter70218013 = new Ya.Metrika({
+                  id:70218013,
+                  clickmap:true,
+                  trackLinks:true,
+                  accurateTrackBounce:true,
+                  webvisor:true
+              });
+          } catch(e) { }
+      });
+
+      var n = d.getElementsByTagName("script")[0],
+          s = d.createElement("script"),
+          f = function () { n.parentNode.insertBefore(s, n); };
+      s.type = "text/javascript";
+      s.async = true;
+      s.src = "https://mc.yandex.ru/metrika/watch.js";
+
+      if (w.opera == "[object Opera]") {
+          d.addEventListener("DOMContentLoaded", f, false);
+      } else { f(); }
+  })(document, window, "yandex_metrika_callbacks");
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/70218013" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+
+<!-- Google Analytics -->
+  <script>
+    window.ga = function () { ga.q.push(arguments) }; ga.q = []; ga.l = +new Date;
+    ga('create', 'G-FEDBM7F51Q', 'auto'); ga('send', 'pageview')
+  </script>
+  <script src="https://www.google-analytics.com/analytics.js" async defer></script>
+
+</section>
+
+<footer class="page-footer">
+  <div class="page-footer-legal-info-container page-footer-element">
+    <p>
+      Clever Geek | <span class="page-footer-legal-info-year js-page-footer-legal-info-year">2020</span>
+    </p>
+  </div>
+  <div class="page-footer-counters-container page-footer-element">
+    <div class="company-info js-company-info" itemscope="" itemtype="http://schema.org/Organization">
+      <span itemprop="name">Western Town Media (WTM)</span>
+      <div itemprop="address" itemscope="" itemtype="http://schema.org/PostalAddress">
+        <span itemprop="streetAddress">1968 Stoney Lonesome Road</span>
+        <br>
+        <span itemprop="postalCode">PA 18640</span>
+        <span itemprop="addressLocality">Pittston, USA</span>
+      </div>
+      <span itemprop="telephone">570-362-1316</span>
+    </div>
+    <script type="application/ld+json">
+      {
+        "@context": "http://schema.org",
+        "@type": "Organization",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Pittston, USA",
+          "postalCode": "PA 18640",
+          "streetAddress": "1968 Stoney Lonesome Road"
+        },
+        "name": "Western Town Media (WTM)",
+        "telephone": "570-362-1316"
+      }
+    </script>
+  </div>
+</footer>
+  
+</body>
+
+</html>
