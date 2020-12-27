@@ -1,0 +1,451 @@
+<!doctype html>
+<html class="no-js" lang="en">
+
+<head>
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-FEDBM7F51Q"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-FEDBM7F51Q');
+  </script>
+
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <title>🆔 🃏 👨🏾‍🔧 RabbitMQとMS SQL間の分散トランザクション 🚪 ✋🏽 👨🏾‍💼</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <meta name="description" content="2つのシステム間で非同期通信を実装するには、メッセージキューを使用することが非常に有益です。 システムの1つが存在しても、他のシステムはそれに気づかず、静かにメッセージを送信し続けます。メッセージは2番目のシステムが解除されると処理されます。 MS SQLテーブルをメッセージキューとして使用できます...">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml"/>
+
+  <link rel="stylesheet" href="../../css/main.css">
+
+  <link href="https://fonts.googleapis.com/css?family=Quicksand&display=swap" rel="stylesheet">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+  <script>document.write('<script src="https://pagea' + 'd2.googles' + 'yndication.com/pagea' + 'd/js/a' + 'dsby' + 'google.js"><\/script>')</script>
+  <script>
+        var superSpecialObject = {};
+        superSpecialObject['google_a' + 'd_client'] = 'ca-p' + 'ub-6974184241884155';
+        superSpecialObject['enable_page_level_a' + 'ds'] = true;
+       (window['a' + 'dsbygoogle'] = window['a' + 'dsbygoogle'] || []).push(superSpecialObject);
+  </script>
+</head>
+
+<body>
+  <!--[if lte IE 9]>
+    <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience and security.</p>
+  <![endif]-->
+  <header class="page-header js-page-header">
+    <a class="page-header-logo-container" href="https://tech-in-japan.github.io/index.html"></a>
+    <div class="page-header-text">Clever Geek Handbook</div>
+  </header>
+  <section class="page js-page"><h1>RabbitMQとMS SQL間の分散トランザクション</h1><div class="post__text post__text-html js-mediator-article" id="post-content-body" data-io-article-url="https://habr.com/ru/company/mindbox/blog/257949/">  2つのシステム間で非同期通信を実装するには、メッセージキューを使用することが非常に有益です。 システムの1つが存在しても、他のシステムはそれに気づかず、静かにメッセージを送信し続けます。メッセージは2番目のシステムが解除されると処理されます。  MS SQLテーブルをメッセージキューとして使用できますが、これは特にスケーラブルなソリューションではありません。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     ただし、メッセージキューを格納するための別のシステムが用意されるとすぐに（RabbitMQを使用します）、すぐにトランザクションの問題が発生します。 たとえば、Rabbitにメッセージを送信したデータベースにマークを保存する場合、メッセージが正常に送信された場合にのみマークが保存されることを保証するのはそれほど簡単ではありません。 猫の下でこの問題にどのように対処したかについて読んでください。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <a name="habracut"></a>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     一部のシナリオでは、SQLトランザクションの完了後にメッセージをRabbitMQに送信するだけで済みます。 たとえば、登録中にパスワード付きの電子メールを送信する必要があり、登録後に表示されるページに「電子メールを再送信」ボタンがある場合、トランザクションを一切行わず、メッセージの送信エラーが発生した場合、ユーザーに通知を表示するだけで十分です。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      SQLトランザクションをコミットする直前にメッセージを送信できます。 この場合、メッセージの送信が失敗した場合、SQLトランザクションをロールバックできますが、メッセージの送信が成功した後、SQLトランザクションのコミットが落ちる可能性があります。 ただし、まれなメッセージが受信者システムに配信される状況が許容できるものの、送信システムがそれを忘れる場合は、実装が非常に簡単なので、この方法を使用することをお勧めします。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     倒れたトランザクションが必然的に繰り返されるシナリオでは、送信システムに送信の記録がないことを恐れることはできません（さらに、コミットの直前だけでなく、トランザクションのいつでもメッセージを送信できます）。 ただし、送信システムの観点から同じメッセージが受信システムで2回処理されないように、メッセージ処理操作をべき等にする必要があります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     たとえば、電子メールを消費者に送信し、データベースにメモを入れる必要があります。 消費者データはCRMシステムに保存されます。  CRMシステムは、RabbitMQのキューを介して電子メールゲートウェイと通信します。 メッセージの送信は、一意の識別子とメッセージの送信先のコンシューマーのリストを持つタスクによって実行されます。 消費者へのレターの送信処理が低下した場合（たとえば、SQLタイムアウトなど）、しばらくすると、タスクは再びメッセージの送信を試みます。 このシナリオでは、トランザクションが完了する前にメッセージをRabbitMQに送信できますが、電子メールゲートウェイでメッセージを処理する場合、一意のタスク識別子とコンシューマー番号をリストに保存する必要があります。 このタスク識別子とコンシューマー番号を含むメッセージが電子メールゲートウェイデータベースに既にある場合、それを再度送信しません。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     電子メールゲートウェイがCRMがメッセージを送信する方法を正確に抽象化するために、CRMはリスト内のタスク識別子と消費者番号ではなく、べき等キー（このデータに基づいて生成される一意の値）を送信する必要があります。 電子メールを送信する他の方法では、べき等キーは異なる方法で生成されます。 このアプローチでは、電子メールゲートウェイはメッセージの送信方法について何も知らない必要があります。主なことは、送信者がメッセージを一意に識別するキーを送信することです。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     すべての場合において、SQLトランザクションがクラッシュした場合に、しばらくしてからそれが繰り返されることを保証できるわけではありません。 また、一意のi等性キーを生成できるデータに基づいているとは限りません。 また、重複メッセージがない場合でも、Ack RabbitMQメソッドの呼び出しがドロップされると、1つのメッセージが複数回処理される可能性があるため、常にキューのべき等からメッセージ処理操作を行うことをお勧めします。 一般的な場合の問題を解決するには、RabbitMQとMS SQL間の分散トランザクションのようなものと、自動生成されるべき等キーが必要です。 これらのタスクは両方とも次のように解決できます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ol><li>  SQLトランザクションの一部として、一意のメッセージ識別子がデータベースの特別なテーブルに保存されます。 </li><li>  INSERTクエリの実行後、SQLトランザクションが完了する前に、メッセージは中間キューに保存されます。 このメッセージでは、とりわけ、データベースに保存された一意の識別子が送信されます。 </li><li> 別のタスクが中間キューを処理し、メッセージにデータベース内の一意の識別子があることを確認します。 </li><li> 存在する場合、メッセージはキューに転送され、受信者システムによってすでに処理されています。 古い識別子を補助テーブルに保存しないために、メッセージが移動された後、その識別子はデータベースから削除されます（識別子を削除しても、システムのパフォーマンスには影響しません-データベースに余分なレコードがあります）。 </li><li> 一意の識別子によってデータベース内のレコードを要求するときにトランザクションがまだ完了していない場合、要求はこのトランザクションの完了を待機し、その後のみレコードを返します。 つまり、トランザクションの完了を待つために追加のロジックは必要ありません。 </li><li> 一意の識別子がデータベースにない場合、これはトランザクションが拒否され、メッセージが破棄されたことを意味します。 </li><li> メッセージの一意の識別子は、受信側システムでべき等キーとして使用されます。 </li></ol>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/e13/7d0/e23/e137d0e23f6e44ab947408d12aefb577.png" alt="画像">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     このアプローチにより、送信されたメッセージに関する情報が送信システムに保存されることが保証されます。 メッセージ送信トランザクションで一意の識別子を持つレコードが作成された場合、それを使用して補助テーブルなしで実行できます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     ここで問題が発生する可能性があります。「データベースのプレートをキューとして使用するよりも優れているのは何ですか？ とにかく、データベースに対して補助クエリを実行する必要があります。「事実、データベース内のテーブルをキューとして使用すると、「SELECT TOP 1 * FROMメッセージWHERE Status = 'New'」のようなクエリが実行され、最後の生メッセージが受信されます。 複数のスレッドでメッセージを処理する場合、1つのメッセージが2つの異なるスレッドで処理されないようにするには、シリアル化可能なトランザクションを使用して最後のメッセージを受信し、そのステータスを変更する必要があります。  Serializableトランザクションを使用する場合、最後の未処理メッセージを受信する要求は、「新規」ステータスのすべてのレコードをブロックし、メッセージ受信トランザクションが完了するまで誰も新しいメッセージを追加できません。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     ただし、このようなトランザクションでは、2つのスレッドが最後の未処理のメッセージを同時に読み取り、同時に共有ロックを課すことができるため、デッドロックが常に発生します。メッセージのステータスを更新しようとすると、このロックのレベルを排他的に上げることができず、トランザクションの1つが拒​​否されます。 したがって、メッセージを読むときは、更新ロックをかける必要があります。 その結果、キューは一度に1つのスレッドだけがアクセス（書き込みと読み取りの両方）できるため、ボトルネックになります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     上記のアプローチを使用する場合、補助テーブルへのすべてのクエリ（挿入、検索、および削除）は、既知の一意キーを使用して実行され、データベース内の1つのレコードのみをブロックします。 したがって、メッセージのマルチスレッド処理では、メッセージを追加または受信するためにロックが解放されるまで複数のスレッドが待機するボトルネックはありません。 </div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+<section class="more-articles-navigation-panel js-more-articles-navigation-panel">
+<h4>More articles:</h4>
+<nav class="list-of-articles-container js-list-of-articles-container"><ul class="list-of-pages js-list-of-pages">
+<li><a href="../J257937/index.html">PHDaysでの新しい競争：モバイル通信、電気変電所、ルーティングプロトコルのハッキング</a></li>
+<li><a href="../J257939/index.html">Youtubeによるチャンネルの禁止方法と復元方法</a></li>
+<li><a href="../J25794/index.html">Blabnote：最初の純粋な音声ソーシャルネットワーク</a></li>
+<li><a href="../J257941/index.html">LFS：パワーのダークサイド。 パート2</a></li>
+<li><a href="../J257943/index.html">視覚障害者向けArduinoバジェットデバイス（オープンハードウェア）</a></li>
+<li><a href="../J257951/index.html">VKontakteの脆弱性により、プライベート写真への直接リンクが許可されました</a></li>
+<li><a href="../J257957/index.html">一般的な代替教育について、特にC＃について</a></li>
+<li><a href="../J257959/index.html">YAPC会議::ロシア:: 2015年5月16〜17日にモスクワで開催されるMayPerl、お見逃しなく</a></li>
+<li><a href="../J25796/index.html">ネットで洗濯できる友達を探す</a></li>
+<li><a href="../J257967/index.html">バグに取り組む-phppgadmin</a></li>
+</ul></nav>
+</section><br />
+<a href="../../allArticles.html"><strong>All Articles</strong></a>
+<script src="../../js/main.js"></script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript" >
+  (function (d, w, c) {
+      (w[c] = w[c] || []).push(function() {
+          try {
+              w.yaCounter70218013 = new Ya.Metrika({
+                  id:70218013,
+                  clickmap:true,
+                  trackLinks:true,
+                  accurateTrackBounce:true,
+                  webvisor:true
+              });
+          } catch(e) { }
+      });
+
+      var n = d.getElementsByTagName("script")[0],
+          s = d.createElement("script"),
+          f = function () { n.parentNode.insertBefore(s, n); };
+      s.type = "text/javascript";
+      s.async = true;
+      s.src = "https://mc.yandex.ru/metrika/watch.js";
+
+      if (w.opera == "[object Opera]") {
+          d.addEventListener("DOMContentLoaded", f, false);
+      } else { f(); }
+  })(document, window, "yandex_metrika_callbacks");
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/70218013" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+
+<!-- Google Analytics -->
+  <script>
+    window.ga = function () { ga.q.push(arguments) }; ga.q = []; ga.l = +new Date;
+    ga('create', 'G-FEDBM7F51Q', 'auto'); ga('send', 'pageview')
+  </script>
+  <script src="https://www.google-analytics.com/analytics.js" async defer></script>
+
+</section>
+
+<footer class="page-footer">
+  <div class="page-footer-legal-info-container page-footer-element">
+    <p>
+      Clever Geek | <span class="page-footer-legal-info-year js-page-footer-legal-info-year">2020</span>
+    </p>
+  </div>
+  <div class="page-footer-counters-container page-footer-element">
+    <div class="company-info js-company-info" itemscope="" itemtype="http://schema.org/Organization">
+      <span itemprop="name">Western Town Media (WTM)</span>
+      <div itemprop="address" itemscope="" itemtype="http://schema.org/PostalAddress">
+        <span itemprop="streetAddress">1968 Stoney Lonesome Road</span>
+        <br>
+        <span itemprop="postalCode">PA 18640</span>
+        <span itemprop="addressLocality">Pittston, USA</span>
+      </div>
+      <span itemprop="telephone">570-362-1316</span>
+    </div>
+    <script type="application/ld+json">
+      {
+        "@context": "http://schema.org",
+        "@type": "Organization",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Pittston, USA",
+          "postalCode": "PA 18640",
+          "streetAddress": "1968 Stoney Lonesome Road"
+        },
+        "name": "Western Town Media (WTM)",
+        "telephone": "570-362-1316"
+      }
+    </script>
+  </div>
+</footer>
+  
+</body>
+
+</html>

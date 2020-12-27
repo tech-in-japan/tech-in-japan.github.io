@@ -1,0 +1,711 @@
+<!doctype html>
+<html class="no-js" lang="en">
+
+<head>
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-FEDBM7F51Q"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-FEDBM7F51Q');
+  </script>
+
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <title>🤞🏻 🎅🏽 🚗 Node.jsのバグを修正し、誤ってパフォーマンスを2倍にする方法 🧝🏾 😷 🤱🏽</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <meta name="description" content="それはすべて、 Node.jsで実行されているImpressアプリケーションサーバーでHTTP 408 Request Timeoutエラーの戻りを最適化したという事実から始まりました。 ご存じのとおり、http.Server ノードには、指定された時間内に閉じられなかった場合に、開いているソケット...">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml"/>
+
+  <link rel="stylesheet" href="../../css/main.css">
+
+  <link href="https://fonts.googleapis.com/css?family=Quicksand&display=swap" rel="stylesheet">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+  <script>document.write('<script src="https://pagea' + 'd2.googles' + 'yndication.com/pagea' + 'd/js/a' + 'dsby' + 'google.js"><\/script>')</script>
+  <script>
+        var superSpecialObject = {};
+        superSpecialObject['google_a' + 'd_client'] = 'ca-p' + 'ub-6974184241884155';
+        superSpecialObject['enable_page_level_a' + 'ds'] = true;
+       (window['a' + 'dsbygoogle'] = window['a' + 'dsbygoogle'] || []).push(superSpecialObject);
+  </script>
+</head>
+
+<body>
+  <!--[if lte IE 9]>
+    <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience and security.</p>
+  <![endif]-->
+  <header class="page-header js-page-header">
+    <a class="page-header-logo-container" href="https://tech-in-japan.github.io/index.html"></a>
+    <div class="page-header-text">Clever Geek Handbook</div>
+  </header>
+  <section class="page js-page"><h1>Node.jsのバグを修正し、誤ってパフォーマンスを2倍にする方法</h1><div class="post__text post__text-html js-mediator-article" id="post-content-body" data-io-article-url="https://habr.com/ru/post/264851/"><img align="left" src="https://habrastorage.org/files/de6/b42/5e6/de6b425e629a43219c4f8bb5375ed8c2.png"> それはすべて、 <a href="http://nodejs.org/">Node.jsで</a>実行されている<a href="https://www.npmjs.com/package/impress">Impress</a>アプリケーションサーバーで<a href="http://tools.ietf.org/html/rfc2068">HTTP 408 Request Timeout</a>エラーの戻りを最適化したという事実から始まりました<a href="http://nodejs.org/">。</a> ご存じのとおり、http.Server <a href="&amp;xid=17259,15700023,15700186,15700191,15700256,15700259,15700262,15700265,15700271,15700283&amp;usg=ALkJrhhDAPxmU_kCQPn--6h95Gc_ybx00Q#http_class_">ノードに</a>は、指定された時間内に閉じられなかった場合に、開いているソケットごとに<a href="&amp;xid=17259,15700023,15700186,15700191,15700256,15700259,15700262,15700265,15700271,15700283&amp;usg=ALkJrhhDAPxmU_kCQPn--6h95Gc_ybx00Q#http_class_">発生</a>するタイムアウトイベントがあります。 各リクエストではなく、つまりそれを明確にしたい 関数が2つの引数（req、res）を持っている各リクエストイベント、つまり各ソケットに対してではありません。 単一のソケットを介して、 <a href="http://tools.ietf.org/html/rfc7230">キープアライブ</a>モードの多くの要求を順番に受信できます。 このイベントを設定する場合、server.setTimeout（2 * 60 * 1000、関数（ソケット）{...}）を使用して、ソケットsocket.destroy（）を自分で破棄する必要があります。 ただし、ハンドラーをインストールしない場合、http.Serverには2分でソケットを自動的に破棄する組み込みのハンドラーがあります。 このタイムアウトで、408エラーを出して、インシデントが解決したと考えることができます。  1つのことがなければ...中断されたソケット、既に応答を受け取ったソケット、クライアント側で閉じられたソケット、一般的にキープアライブモードのすべてのユーザーに対してタイムアウトイベントが発生することに驚いた。 この奇妙な振る舞いは非常に複雑であることが判明したため、以下で説明します。 タイムアウトイベントに1つのチェックを挿入することは可能ですが、私の理想主義では抵抗できず、バグを1レベル深く修正するのに役立ちました。  http.Serverでは、キープアライブモードがRFCを介してだけでなく、公然と追加されていないことが判明しました。 接続の個別のタイムアウトと個別のキープアライブタイムアウトの代わりに、すべてが高速タイムアウト（登録/登録解除）で実装される同じタイムアウトにありますが、デフォルトでは2分に設定されています。 ブラウザがキープアライブでうまく機能し、それを効果的に再利用するか、未使用の接続を閉じても、それほど怖くはありません。 <a name="habracut"></a>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h4> 最初に結果 </h4>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      12行の変更後、タイムアウトイベントは、サーバーがクライアントに応答せず、クライアントがそれを待つときにのみ発生し始めました。 接続タイムアウトはデフォルト値の2分のままですが、http.Server.keepAliveTimeoutはデフォルト値の5秒（Apacheなど）で表示されました。 修正リポジトリ： <a href="https://github.com/tshemsedinov/node">tshemsedinov / node</a> （node.js 0.12の場合）および<a href="">tshemsedinov / io.js</a> （io.jsの場合）。 すぐに<a href="https://github.com/nodejs/node">、</a>それぞれ<a href="https://github.com/joyent/node">joyent / node</a>と<a href="https://github.com/nodejs/node">nodejs / nodeに</a>プールリクエストを送信します（以前のio.jsですが、現在は既にプロジェクトを結合しています）。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <b>修正の本質は、</b>接続がハングしてリクエストが応答されないままで、ソケットが開いている場合に接続タイムアウトが機能するはずであるが、すべてのリクエストが応答されると、キープアライブモードで別のリクエストを送信する機会を与える必要がはるかに少なくなる必要があることです。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     副作用についてはすでに推測できます。多くのメモリとソケット記述子が解放され、現在の高負荷プロジェクトですぐに全体のパフォーマンスが2倍以上向上しました。 ここで、コードを使用した小さなテストを示します。その結果は下のグラフで確認でき、何が起こっているのかを知ることができます。 <img src="https://habrastorage.org/files/f3d/37f/71c/f3d37f71c30a4fa5ab9b3789babae7f7.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     テストの本質：15,000のHTTP / 1.1接続（特別なヘッダーがなくてもデフォルトでキープアライブと見なされる）を作成し、ソケットの作成とクローズの強度とメモリ消費を確認します。 テストは200秒間実行され、データは10秒ごとに記録されました。 左側のグラフは修正なしのNode.js 0.2.7であり、右側のグラフはNode.jsにパッチを適用して再構築したものです。 青い線は開いているソケットの数、赤い線は閉じたソケットの数です。 もちろん、これを行うには、すべてのソケットを配列に書き込む必要がありましたが、メモリを完全には解放しませんでした。 したがって、テストのクライアント部分には、メモリをチェックするためのソケットの配列を使用する場合と使用しない場合の2つのオプションがあります。 予想どおり、ソケットは2倍速く解放されます。これは、記述子を占有せず、オペレーティングシステムのTCP / IPスタックをロードしないことを意味します。ノードに加えて、各記述子のデータ構造とバッファを保持します。 <img src="https://habrastorage.org/files/9de/600/6ba/9de6006ba5654c639fd8870933fc9e59.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     青い線はRSS（常駐セットサイズ）-合計プロセスにかかる時間、赤い線-ヒープ合計-アプリケーションに割り当てられたメモリ、緑の線-使用されたヒープ-使用されたメモリ 当然、解放されたすべてのメモリは、最初の割り当てよりも高速で、他のソケットに再利用できます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     テストコード： <div class="spoiler">  <b class="spoiler_title">テストのクライアント部分</b> <div class="spoiler_text"><pre><code class="javascript hljs"><span class="hljs-keyword"><span class="hljs-keyword">var</span></span> net = <span class="hljs-built_in"><span class="hljs-built_in">require</span></span>(<span class="hljs-string"><span class="hljs-string">'net'</span></span>); <span class="hljs-keyword"><span class="hljs-keyword">var</span></span> count = <span class="hljs-number"><span class="hljs-number">0</span></span>; keepAliveConnect(); <span class="hljs-function"><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">function</span></span></span><span class="hljs-function"> </span><span class="hljs-title"><span class="hljs-function"><span class="hljs-title">keepAliveConnect</span></span></span><span class="hljs-function">(</span><span class="hljs-params"></span><span class="hljs-function"><span class="hljs-params"></span>) </span></span>{ <span class="hljs-keyword"><span class="hljs-keyword">var</span></span> c = net.connect({ <span class="hljs-attr"><span class="hljs-attr">port</span></span>: <span class="hljs-number"><span class="hljs-number">80</span></span>, <span class="hljs-attr"><span class="hljs-attr">allowHalfOpen</span></span>: <span class="hljs-literal"><span class="hljs-literal">true</span></span> }, <span class="hljs-function"><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">function</span></span></span><span class="hljs-function">(</span><span class="hljs-params"></span><span class="hljs-function"><span class="hljs-params"></span>) </span></span>{ c.write(<span class="hljs-string"><span class="hljs-string">'GET / HTTP/1.1\r\nHost: localhost\r\n\r\n'</span></span>); <span class="hljs-keyword"><span class="hljs-keyword">if</span></span> (count++ <span class="xml"><span class="hljs-tag"><span class="xml"><span class="hljs-tag">&lt; </span></span><span class="hljs-attr"><span class="xml"><span class="hljs-tag"><span class="hljs-attr">15000</span></span></span></span><span class="xml"><span class="hljs-tag">) </span></span><span class="hljs-attr"><span class="xml"><span class="hljs-tag"><span class="hljs-attr">keepAliveConnect</span></span></span></span><span class="xml"><span class="hljs-tag">(); }); }</span></span></span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> </div></div><div class="spoiler">  <b class="spoiler_title">ソケットカウンターを備えたサーバー側</b> <div class="spoiler_text"><pre> <code class="javascript hljs"><span class="hljs-keyword"><span class="hljs-keyword">var</span></span> http = <span class="hljs-built_in"><span class="hljs-built_in">require</span></span>(<span class="hljs-string"><span class="hljs-string">'http'</span></span>); <span class="hljs-keyword"><span class="hljs-keyword">var</span></span> pad = <span class="hljs-string"><span class="hljs-string">''</span></span>; <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> (<span class="hljs-keyword"><span class="hljs-keyword">var</span></span> i = <span class="hljs-number"><span class="hljs-number">0</span></span>; i &lt; <span class="hljs-number"><span class="hljs-number">10</span></span>; i++) pad += <span class="hljs-string"><span class="hljs-string">'- - - - - - - - - - - - - - - - - '</span></span>; <span class="hljs-keyword"><span class="hljs-keyword">var</span></span> sockets = []; <span class="hljs-keyword"><span class="hljs-keyword">var</span></span> server = http.createServer(<span class="hljs-function"><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">function</span></span></span><span class="hljs-function"> (</span><span class="hljs-params"><span class="hljs-function"><span class="hljs-params">req, res</span></span></span><span class="hljs-function">) </span></span>{ <span class="hljs-keyword"><span class="hljs-keyword">var</span></span> socket = req.socket; sockets.push(socket); res.writeHead(<span class="hljs-number"><span class="hljs-number">200</span></span>, {<span class="hljs-string"><span class="hljs-string">'Content-Type'</span></span>: <span class="hljs-string"><span class="hljs-string">'text/plain'</span></span>}); res.end(pad + <span class="hljs-string"><span class="hljs-string">'Hello World\n'</span></span>); }); setInterval(<span class="hljs-function"><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">function</span></span></span><span class="hljs-function">(</span><span class="hljs-params"></span><span class="hljs-function"><span class="hljs-params"></span>) </span></span>{ <span class="hljs-keyword"><span class="hljs-keyword">var</span></span> destroyedSockets = <span class="hljs-number"><span class="hljs-number">0</span></span>; <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> (<span class="hljs-keyword"><span class="hljs-keyword">var</span></span> i = <span class="hljs-number"><span class="hljs-number">0</span></span>; i &lt; sockets.length; i++) { <span class="hljs-keyword"><span class="hljs-keyword">if</span></span> (sockets[i].destroyed) destroyedSockets++; } <span class="hljs-keyword"><span class="hljs-keyword">var</span></span> m = process.memoryUsage(), a = [m.rss, m.heapTotal, m.heapUsed, sockets.length, destroyedSockets]; <span class="hljs-built_in"><span class="hljs-built_in">console</span></span>.log(a.join(<span class="hljs-string"><span class="hljs-string">','</span></span>)); }, <span class="hljs-number"><span class="hljs-number">10000</span></span>); server.listen(<span class="hljs-number"><span class="hljs-number">80</span></span>, <span class="hljs-string"><span class="hljs-string">'127.0.0.1'</span></span>);</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre></div></div><div class="spoiler">  <b class="spoiler_title">ソケットカウンターのないサーバー側</b> <div class="spoiler_text"><pre> <code class="javascript hljs"><span class="hljs-keyword"><span class="hljs-keyword">var</span></span> http = <span class="hljs-built_in"><span class="hljs-built_in">require</span></span>(<span class="hljs-string"><span class="hljs-string">'http'</span></span>); <span class="hljs-keyword"><span class="hljs-keyword">var</span></span> pad = <span class="hljs-string"><span class="hljs-string">''</span></span>; <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> (<span class="hljs-keyword"><span class="hljs-keyword">var</span></span> i = <span class="hljs-number"><span class="hljs-number">0</span></span>; i &lt; <span class="hljs-number"><span class="hljs-number">10</span></span>; i++) pad += <span class="hljs-string"><span class="hljs-string">'- - - - - - - - - - - - - - - - - '</span></span>; <span class="hljs-keyword"><span class="hljs-keyword">var</span></span> server = http.createServer(<span class="hljs-function"><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">function</span></span></span><span class="hljs-function"> (</span><span class="hljs-params"><span class="hljs-function"><span class="hljs-params">req, res</span></span></span><span class="hljs-function">) </span></span>{ res.writeHead(<span class="hljs-number"><span class="hljs-number">200</span></span>, {<span class="hljs-string"><span class="hljs-string">'Content-Type'</span></span>: <span class="hljs-string"><span class="hljs-string">'text/plain'</span></span>}); res.end(pad + <span class="hljs-string"><span class="hljs-string">'Hello World\n'</span></span>); }); setInterval(<span class="hljs-function"><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">function</span></span></span><span class="hljs-function">(</span><span class="hljs-params"></span><span class="hljs-function"><span class="hljs-params"></span>) </span></span>{ <span class="hljs-keyword"><span class="hljs-keyword">var</span></span> m = process.memoryUsage(); <span class="hljs-built_in"><span class="hljs-built_in">console</span></span>.log([m.rss, m.heapTotal, m.heapUsed].join(<span class="hljs-string"><span class="hljs-string">','</span></span>)); }, <span class="hljs-number"><span class="hljs-number">10000</span></span>); server.listen(<span class="hljs-number"><span class="hljs-number">80</span></span>, <span class="hljs-string"><span class="hljs-string">'127.0.0.1'</span></span>);</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre></div></div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h4> 問題の詳細 </h4>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     クライアント側がキープアライブを要求しない場合、Node.jsはres.end（）を呼び出すことですぐにソケットを閉じ、リソースリークは発生しません。 したがって、http.get（ '/'）を大規模に行うすべてのテストでは、On（ 'error'、function（）{}）またはcurl http://domain.com/またはab（apacheベンチマーク）を介して、いいね また、ブラウザは常にキープアライブを望んでいますが、ノードのようにうまく機能しません。 キープアライブの問題は、複数のリクエストを順番に送信できるだけで、各回答がどの競合リクエストに応答するかをマークするバッチメカニズムがないことです。 同意します、これは非常に不便です。  <a href="httpbis-spdy-00">SPDY</a>および<a href="https://tools.ietf.org/html/rfc7540">HTTP / 2</a>では、このような問題はありません。 ブラウザーが多くのリソースを含むページをロードするとき、キープアライブを使用することがありますが、多くの場合、正しいヘッダーを送信し、サーバーに開いた接続を維持するように指示し、自分自身でそれをほとんど使用しないか、無視することさえできます。 ここで、FirebugとDevToolsは、リクエストが完了し、ソケットがハングしていることを示しています。 ページがすでに完全にロードされていて、いくつかのソケットが作成されていても、それらは閉じられておらず、APIに不幸なリクエストを1つ行う必要がありますが、私の観察では、ブラウザーは常に新しい接続を作成し、ソケットはサーバーまで保持し続けることを示しています閉じます。 このような一時停止されたソケットは並列リクエストとは見なされないため、ブラウザーの制限に影響しません（私は理解しているように、ハーフオープンとしてマークされ、使用されず、カウンターから除外されます）。 これは、ブラウザを閉じると確認できます。ノードサーバーでは、2分のタイムアウトを待つ時間がないソケットの束がすぐに閉じられます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     応答がクライアント側に送信されるかどうかに関係なく、ノードのタイムアウトは2分です。 このタイムアウトを、たとえば5秒に下げることはオプションではありません。その結果、客観的に5秒以上かかる接続は切断されます。 キープアライブには別のタイムアウトが必要です。そのカウントダウンはすぐには開始されませんが、ソケットの最後のアクティビティの後、つまり これは、クライアントからの次のリクエストを待つリアルタイムです。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     一般に、キープアライブを完全に実装するには、さらに多くのことを行う必要があり、クライアントから送信されたHTTPヘッダーから目的のタイムアウト時間を取得し、応答ヘッダーで実際に設定されたタイムアウト時間をクライアントに送信し、maxおよびKeep-Alive Extensionsパラメーターを処理します。 しかし、最新のブラウザはこれらすべてを使用しているわけではありません。いずれにしても、私が実施した実験では、これらのHTTPヘッダーは無視されていました。 そのため、小さな編集で素晴らしい結果が得られ、落ち着きました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h4>  Node.jsの修正 </h4>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     最初に、イベントを発生させない<a href="https://github.com/tshemsedinov/node/commit/ae9a1a5d5b49d4e38d3d0adfc9acbdf11e42f028">ae9a1a5を</a>防ぐために、簡単な方法で追加のタイムアウトを使用して問題を修正することにし<a href="https://github.com/tshemsedinov/node/commit/ae9a1a5d5b49d4e38d3d0adfc9acbdf11e42f028">ました</a> 。 しかし、そのためにはコードに慣れる必要があり、コードの記述方法が気に入らなかった。 一部の場所には、関数のネストを取り除くために大きなクロージャーを分解する必要があるというコメントはありますが、テストを収集できず、多くの人々がすべての依存コードを台無しにする可能性があるため、これらのライブラリには触れません。 さて、すべては機能しませんが、ソケットのリークは私に休息を与えませんでした。 そして、私は1つのres.end（）が既に送信されたときにServerResponse.prototype.detachSocketの後にソケットを破棄することで問題を解決することを計画しましたが、これは多くの有用なキープアライブ<a href="https://github.com/tshemsedinov/node/commit/9d9484b6b7808624d39e2b3bec3135647a5fa96a">動作を壊し</a>ました： <a href="https://github.com/tshemsedinov/node/commit/9d9484b6b7808624d39e2b3bec3135647a5fa96a">9d9484b</a> 。 他のサーバーのRFCとドキュメントを読んで実験した結果、キープアライブタイムアウトを実装する必要があり、接続タイムアウトとは異なることが明らかになりました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     修正： <ol><li>  server.keepAliveTimeoutパラメーターが追加されました。このパラメーターは手動で設定できます<a href="https://github.com/tshemsedinov/node/blob/ce4e14f7630f489f8f22e1f4532049c4076c4f13/lib/_">/lib/_http_server.js#L259</a> </li><li>  prefinishイベント関数の名前を別の場所で使用するように<a href="https://github.com/tshemsedinov/node/blob/ce4e14f7630f489f8f22e1f4532049c4076c4f13/lib/_">変更</a>しました<a href="https://github.com/tshemsedinov/node/blob/ce4e14f7630f489f8f22e1f4532049c4076c4f13/lib/_">/lib/_http_server.js#L455,L456</a> </li><li> すべてがすでに回答された瞬間をキャッチするために、終了イベントをハングさせました。 いいえ、ソケットのタイムアウトイベントでハングするEventEmitterからハンドラーを削除し、ソケットを破壊するイベントをブロードキャストします<a href="https://github.com/tshemsedinov/node/blob/ce4e14f7630f489f8f22e1f4532049c4076c4f13/lib/_">/lib/_http_server.js#L483,L491</a> </li><li>  httpsサーバーの場合、keepAliveTimeoutパラメーターを追加します。これは、 <a href="https://github.com/tshemsedinov/node/blob/ce4e14f7630f489f8f22e1f4532049c4076c4f13/lib/">/ lib / https.js＃L51</a>プロトタイプから他のすべてを継承するためです。 </li></ol>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <a href="https://npmjs.org/package/impress">Impress Application Serverの場合</a> 、これらの変更はすべて美しいパッチの形で内部的に実装され、Node.jsにパッチがなくても効果を利用できます。ソースでは、その簡単さがわかります。 さらに、最近のプロジェクトでは、SSEプロトコル（サーバー送信イベント）に基づいてクラスターに統合された4台のサーバーで1000万の永続的な接続（サーバーあたり250万）など、他の印象的な結果を達成しました。 Webソケットでも同じです。  Impressクラスターにアプリケーションバランシングを実装し、以前に使用した<a href="http://zeromq.org/">ZMQの</a>代わりにクラスターノードをTCPベースのプロトコルで接続しました。 この作業の結果は、次の記事でも一部公開されます。 多くの人が、この最適化とパフォーマンスを必要とする人はいないと言っています。誰もが無関心です。 しかし、少なくとも4つの高負荷のライブ例では、中国の顧客とインタラクティブテレビ形式「Seventh Sense」の場合、生産性が2〜3倍から1注文に全般的に向上していることがわかります。 これを行うには、ミドルウェアの原則を放棄し、プロセス間通信を書き直し、アプリケーションバランシングを実装する必要がありました（ハードウェアバランサーは対応できません）など。 これは、ミドルウェアを使用する際のパフォーマンスの恐ろしさについての別の記事です。「ノードが与えたもの、その後ミドルウェアが取ったもの」。 私はすでに十分な事実、統計、例を用意しており、見返りに何かを提供しています。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h4> すぐにすべてが欲しいですか？ </h4>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     次に、ビルドに基づいてではなく、Node.js 0.12.7の公式バージョンでその効果を示すために、このようなパッチをテストする必要があります。 次に、リクエストイベントにさらに7行のコードを追加した場合に何が起こるかを確認します。 ソケットは必要に応じて閉じられ、余分なタイムアウトイベントを伴うエラーも消えます。これは理解できます。 しかし、メモリがあれば、状況は確かに改善されますが、Node.jsを再構築するときほどではありません。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="javascript hljs">http.createServer(<span class="hljs-function"><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">function</span></span></span><span class="hljs-function"> (</span><span class="hljs-params"><span class="hljs-function"><span class="hljs-params">req, res</span></span></span><span class="hljs-function">) </span></span>{ <span class="hljs-keyword"><span class="hljs-keyword">var</span></span> socket = req.socket; res.on(<span class="hljs-string"><span class="hljs-string">'finish'</span></span>, <span class="hljs-function"><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">function</span></span></span><span class="hljs-function">(</span><span class="hljs-params"></span><span class="hljs-function"><span class="hljs-params"></span>) </span></span>{ socket.removeAllListeners(<span class="hljs-string"><span class="hljs-string">'timeout'</span></span>); socket.setTimeout(<span class="hljs-number"><span class="hljs-number">5000</span></span>, <span class="hljs-function"><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">function</span></span></span><span class="hljs-function">(</span><span class="hljs-params"></span><span class="hljs-function"><span class="hljs-params"></span>) </span></span>{ socket.destroy(); }); }); res.writeHead(<span class="hljs-number"><span class="hljs-number">200</span></span>, {<span class="hljs-string"><span class="hljs-string">'Content-Type'</span></span>: <span class="hljs-string"><span class="hljs-string">'text/plain'</span></span>}); res.end(<span class="hljs-string"><span class="hljs-string">'Hello World\n'</span></span>); });</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     グラフの結果を比較します。左側はNode.js 0.12.7の初期状態、中央はリクエストへの7行の追加であり、公式の0.12.7で起動されます。右側は私のリポジトリからパッチを適用したNode.jsです。 この理由は明らかです。0.12.7のクローンは作成しませんでしたが、少し新しいバージョンを作成し、それを撃退しました。 もちろん、最後のテストを除くすべてのテストは、パッチを使用して、パッチを使用せずに私のリポジトリで実行されました。 そして、最後のテストを公式バージョン0.12.7と比較したので、これが現在のコードにどのように影響するかが明確になりました。 <img src="https://habrastorage.org/files/889/32b/806/88932b8062a54bb3b1f2bbf33a6aebbc.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     リポジトリのV8のバージョンは0.12.7と同じですが、ノードで最適化が行われたことは明らかです。 しばらく待つ場合は、上記のパッチを使用するか、修正がノードに適用されます。 これら2つのオプションの結果はほぼ同じです。 一般的に、私はこの方向で実験と最適化を続けていきます。アイデアがあれば、遠慮なく、最も重要な組み込みノードライブラリのコード変換を提案して適切な外観に接続してください。 私を信じて、あらゆるレベルの専門家のために多くの仕事があります。 さらに、ソースコードを勉強することは、プラットフォームを開発する上で知っている最良の方法です。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <b>更新</b> ：_lastに別の問題が見つかりましたが、誰も計算していません。 近隣の編集とマージされ、テストされ、プールリクエストと<a href="https://github.com/nodejs/node/pull/2534">https://github.com/nodejs/node/pull/2534が</a>投稿されました<a href="https://github.com/nodejs/node/pull/2534">。</a> </div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+<section class="more-articles-navigation-panel js-more-articles-navigation-panel">
+<h4>More articles:</h4>
+<nav class="list-of-articles-container js-list-of-articles-container"><ul class="list-of-pages js-list-of-pages">
+<li><a href="../J264829/index.html">モバイル印刷</a></li>
+<li><a href="../J26483/index.html">アカマイ：インターネットステータスレポート</a></li>
+<li><a href="../J264841/index.html">全世界向けのソフトウェアの書き方</a></li>
+<li><a href="../J264843/index.html">OpenWRTの探索：UImageとSysupgradeイメージの違い</a></li>
+<li><a href="../J264849/index.html">メガホン-誰でもアカウントを管理できます</a></li>
+<li><a href="../J264853/index.html">mhddfs-1つのディレクトリに複数のパーティションをマウントする</a></li>
+<li><a href="../J264859/index.html">Web開発およびITの世界からの興味深い資料のダイジェスト。先週第172号（2015年8月9〜16日）</a></li>
+<li><a href="../J264861/index.html">プロジェクトでjQueryをD3に置き換える方法</a></li>
+<li><a href="../J264863/index.html">Yii2での例外のキャッチと処理</a></li>
+<li><a href="../J264865/index.html">オープンソースのJavaライブチャットサーバー</a></li>
+</ul></nav>
+</section><br />
+<a href="../../allArticles.html"><strong>All Articles</strong></a>
+<script src="../../js/main.js"></script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript" >
+  (function (d, w, c) {
+      (w[c] = w[c] || []).push(function() {
+          try {
+              w.yaCounter70218013 = new Ya.Metrika({
+                  id:70218013,
+                  clickmap:true,
+                  trackLinks:true,
+                  accurateTrackBounce:true,
+                  webvisor:true
+              });
+          } catch(e) { }
+      });
+
+      var n = d.getElementsByTagName("script")[0],
+          s = d.createElement("script"),
+          f = function () { n.parentNode.insertBefore(s, n); };
+      s.type = "text/javascript";
+      s.async = true;
+      s.src = "https://mc.yandex.ru/metrika/watch.js";
+
+      if (w.opera == "[object Opera]") {
+          d.addEventListener("DOMContentLoaded", f, false);
+      } else { f(); }
+  })(document, window, "yandex_metrika_callbacks");
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/70218013" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+
+<!-- Google Analytics -->
+  <script>
+    window.ga = function () { ga.q.push(arguments) }; ga.q = []; ga.l = +new Date;
+    ga('create', 'G-FEDBM7F51Q', 'auto'); ga('send', 'pageview')
+  </script>
+  <script src="https://www.google-analytics.com/analytics.js" async defer></script>
+
+</section>
+
+<footer class="page-footer">
+  <div class="page-footer-legal-info-container page-footer-element">
+    <p>
+      Clever Geek | <span class="page-footer-legal-info-year js-page-footer-legal-info-year">2020</span>
+    </p>
+  </div>
+  <div class="page-footer-counters-container page-footer-element">
+    <div class="company-info js-company-info" itemscope="" itemtype="http://schema.org/Organization">
+      <span itemprop="name">Western Town Media (WTM)</span>
+      <div itemprop="address" itemscope="" itemtype="http://schema.org/PostalAddress">
+        <span itemprop="streetAddress">1968 Stoney Lonesome Road</span>
+        <br>
+        <span itemprop="postalCode">PA 18640</span>
+        <span itemprop="addressLocality">Pittston, USA</span>
+      </div>
+      <span itemprop="telephone">570-362-1316</span>
+    </div>
+    <script type="application/ld+json">
+      {
+        "@context": "http://schema.org",
+        "@type": "Organization",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Pittston, USA",
+          "postalCode": "PA 18640",
+          "streetAddress": "1968 Stoney Lonesome Road"
+        },
+        "name": "Western Town Media (WTM)",
+        "telephone": "570-362-1316"
+      }
+    </script>
+  </div>
+</footer>
+  
+</body>
+
+</html>

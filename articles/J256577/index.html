@@ -1,0 +1,1205 @@
+<!doctype html>
+<html class="no-js" lang="en">
+
+<head>
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-FEDBM7F51Q"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-FEDBM7F51Q');
+  </script>
+
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <title>🤛🏾 🕙 ⏩ STM32からロシアのマイクロコントローラーK1986BE92QIに渡します。 音を生成して再現します。 パート3：TIM + DMA 🧑🏾‍🤝‍🧑🏾 👩🏼‍🤝‍👨🏾 ✌🏾</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <meta name="description" content="エントリー  以前の記事で、 DMAに初めて触れた人について話しました。 その中で、DMA + SysTickを大量に作成しました。 この記事は、経験の浅い曲がったアプローチを考慮して、非常に具体的かつ複雑であることが判明しました。 経験を積んだので、この記事では、DMAを使用するより簡単で理解しや...">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml"/>
+
+  <link rel="stylesheet" href="../../css/main.css">
+
+  <link href="https://fonts.googleapis.com/css?family=Quicksand&display=swap" rel="stylesheet">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+  <script>document.write('<script src="https://pagea' + 'd2.googles' + 'yndication.com/pagea' + 'd/js/a' + 'dsby' + 'google.js"><\/script>')</script>
+  <script>
+        var superSpecialObject = {};
+        superSpecialObject['google_a' + 'd_client'] = 'ca-p' + 'ub-6974184241884155';
+        superSpecialObject['enable_page_level_a' + 'ds'] = true;
+       (window['a' + 'dsbygoogle'] = window['a' + 'dsbygoogle'] || []).push(superSpecialObject);
+  </script>
+</head>
+
+<body>
+  <!--[if lte IE 9]>
+    <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience and security.</p>
+  <![endif]-->
+  <header class="page-header js-page-header">
+    <a class="page-header-logo-container" href="https://tech-in-japan.github.io/index.html"></a>
+    <div class="page-header-text">Clever Geek Handbook</div>
+  </header>
+  <section class="page js-page"><h1>STM32からロシアのマイクロコントローラーK1986BE92QIに渡します。 音を生成して再現します。 パート3：TIM + DMA</h1><div class="post__text post__text-html js-mediator-article" id="post-content-body" data-io-article-url="https://habr.com/ru/post/256577/"><h4> エントリー </h4>  <a href="http://habrahabr.ru/post/256091/">以前の記事で、</a> DMAに初めて<a href="http://habrahabr.ru/post/256091/">触れ</a>た人について話しました。 その中で、DMA + SysTickを大量に作成しました。 この記事は、経験の浅い曲がったアプローチを考慮して、非常に具体的かつ複雑であることが判明しました。 経験を積んだので、この記事では、DMAを使用するより簡単で理解しやすい方法について説明します。 <a name="habracut"></a><h4> 主な側面 </h4> 前の記事から、DMAを開始するには以下が必要であることがわかりました。 <ul><li>  DMAモジュールにクロック信号を適用します。 </li><li>  DMAの管理構造を記入します。 </li><li>  DMAを構成します。 </li><li> チャネルをセットアップします。 </li><li> 送信を有効にします。 </li><li> 転送の最後に、構造を「復元」（上書き）します。 </li></ul> 厳密に定義された時間にデータを「発行」するために、SysTickシステムタイマーを使用しました。 このため、タイマーからの割り込みに常に入り、すべてのDMA転送を再開する必要がありました。 さらに、転送を再開するたびに、データのパケット全体が送信されたかどうかも確認しました。 同意すると、このアプローチはDMAのすべての利点を完全に無効にします。 人生を複雑にするとも言えます。 結局のところ、私たちのマイクロコントローラーには素晴らしいDMA +タイマーがたくさんあります。 したがって、割り込みを入力せずに、次の値をDACに送信する時間であることを彼自身がDMAに伝えるように、タイマーを1回設定できます。 また、以前は「基本」の送信モードを使用していたことを思い出してください。 彼は私たちに絶えず構造を停止し、復元することを強制しました。  DMAにはピンポンモードがあります。 その本質は次のとおりです。一次構造（前の記事で使用したもの）を使用して、データの最初の部分（配列）を転送します。 この時点で、代替（読み取り、2番目）構造を構成して、最初の構造が終了すると、停止せずに2番目に書き込まれたものの転送をすぐに開始できるようにすることができます。  2番目の構造による転送中-最初の構造を復元または変更できます。これにより、任意の長い転送を行う機会が与えられます。 <h4>  DMAの構造、DMA自体、およびタイマーを使用したリンクチャネルの構成 </h4> 覚えているように、各チャネルには独自の制御構造があります（この例では2つあります）。 前の記事の説明に従って構成します。 結果の設定は2つの変数に保存されます。 これらの変数から、構造を復元します。 <div class="spoiler">  <b class="spoiler_title">構造のセットアップ。</b> <div class="spoiler_text"><pre><code class="objectivec hljs"><span class="hljs-comment"><span class="hljs-comment">//------------------------------------------------- // . //------------------------------------------------- #define dst_src (3&lt;&lt;30) // - 16  (). #define src_inc (1&lt;&lt;26) //   16    . #define src_size (1&lt;&lt;24) //  16 . #define dst_size (1&lt;&lt;28) //  16 .       . #define n_minus_1 (49&lt;&lt;4) //50  (-1) DMA. #define cycle_ctrl (3&lt;&lt;0) //-. struct DAC_ST { uint32_t Destination_end_pointer; //   . uint32_t Source_end_pointer; //    uint32_t channel_cfg; // . uint32_t NULL; // . } __align(1024) DAC_ST; //    1024 . struct DAC_ST DAC_ST_ADC[32+32]; //     . /// = 16 , / = 16 ,  , 50 , -. uint32_t DMA_DAC_InitST_PR = dst_src|src_inc|src_size|dst_size|n_minus_1|cycle_ctrl; uint32_t DMA_DAC_InitST_ALT = dst_src|src_inc|src_size|dst_size|n_minus_1|cycle_ctrl;</span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> </div></div> お気づきかもしれませんが、32個のプライマリ構造と32個の代替構造にメモリを割り当てました。合計でRAMに1キロバイトのメモリが割り当てられます。 変位に苦しむことがないように、私はこの一歩を踏み出しました。 将来的には、オフセットを作成して2つの構造を残すことは簡単です。 次に、これらの構造に記入する必要があります。 <div class="spoiler">  <b class="spoiler_title">塗りつぶし構造</b> <div class="spoiler_text"><pre> <code class="cpp hljs"><span class="hljs-comment"><span class="hljs-comment">//  . DAC_ST_ADC[10-1].Destination_end_pointer = (uint32_t)C_4 + (sizeof(C_4))/2 - 1; //      (C_4 -      100 ). DAC_ST_ADC[10-1].Source_end_pointer = (uint32_t)&amp;(DAC-&gt;DAC2_DATA); //   ( )   (  DAC). DAC_ST_ADC[10-1].channel_cfg = (uint32_t)(DMA_DAC_InitST_PR); //   . DAC_ST_ADC[10-1].NULL = (uint32_t)0; // . //  . DAC_ST_ADC[10-1+32].Destination_end_pointer = (uint32_t)C_4 + sizeof(C_4) - 1; //     (C_4 -      100 ). DAC_ST_ADC[10-1+32].Source_end_pointer = (uint32_t)&amp;(DAC-&gt;DAC2_DATA); //   ( )   (  DAC). DAC_ST_ADC[10-1+32].channel_cfg = (uint32_t)(DMA_DAC_InitST_ALT); //   . DAC_ST_ADC[10-1+32].NULL = (uint32_t)0; // .</span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> </div></div> ご覧のとおり、これら2つの構造の違いは、データソースの最終アドレスのみです。 プライマリでは、アレイの中心（送信は先頭から中央へ）、セカンダリエンドでは（中央から末尾への送信）を示します。 <div class="spoiler">  <b class="spoiler_title">次にDMAを構成します。</b> <div class="spoiler_text"><pre> <code class="cpp hljs"><span class="hljs-meta"><span class="hljs-meta">#</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> CFG_master_enable (1</span><span class="hljs-meta-string"><span class="hljs-meta"><span class="hljs-meta-string">&lt;&lt;0)//   . #define PCLK_EN_DMA (1&lt;&lt;5)//   DMA. //  DMA. RST_CLK-&gt;PER_CLOCK|=PCLK_EN_DMA; //  DMA. DMA-&gt;CTRL_BASE_PTR = (uint32_t)&amp;DAC_ST_ADC; //   . DMA-&gt;CFG = CFG_master_enable; //  DMA.</span></span></span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> </div></div> まあ、それはチャンネルを構成するためだけに残っています。 しかし、どれですか？ 前の記事で示した表を参照できます。 しかし。 前の記事を書いた後、私は自分の間違いを知らされました。 実際、そのテーブルは完全に正しいわけではありません。 <div class="spoiler">  <b class="spoiler_title">より正確な表は次のようになります。</b> <div class="spoiler_text"><pre> <code class="cpp hljs"><span class="hljs-comment"><span class="hljs-comment">/** @defgroup DMA_valid_channels DMA valid channels * @{ */</span></span> <span class="hljs-meta"><span class="hljs-meta">#</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_UART1_TX ((uint8_t)(0)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_UART1_RX ((uint8_t)(1)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_UART2_TX ((uint8_t)(2)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_UART2_RX ((uint8_t)(3)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_SSP1_TX ((uint8_t)(4)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_SSP1_RX ((uint8_t)(5)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_SSP2_TX ((uint8_t)(6)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_SSP2_RX ((uint8_t)(7)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_ADC1 ((uint8_t)(8)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_ADC2 ((uint8_t)(9)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_TIM1 ((uint8_t)(10)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_TIM2 ((uint8_t)(11)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_TIM3 ((uint8_t)(12)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_SW1 ((uint8_t)(13)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_SW2 ((uint8_t)(14)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_SW3 ((uint8_t)(15)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_SW4 ((uint8_t)(16)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_SW5 ((uint8_t)(17)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_SW6 ((uint8_t)(18)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_SW7 ((uint8_t)(19)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_SW8 ((uint8_t)(20)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_SW9 ((uint8_t)(21)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_SW10 ((uint8_t)(22)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_SW11 ((uint8_t)(23)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_SW12 ((uint8_t)(24)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_SW13 ((uint8_t)(25)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_SW14 ((uint8_t)(26)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_SW15 ((uint8_t)(27)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_SW16 ((uint8_t)(28)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_SW17 ((uint8_t)(29)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_SW18 ((uint8_t)(30)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> DMA_Channel_SW19 ((uint8_t)(31)) #</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> IS_DMA_CHANNEL(CHANNEL) (CHANNEL &lt;= (DMA_Channels_Number - 1)) </span><span class="hljs-comment"><span class="hljs-meta"><span class="hljs-comment">/** @} */</span></span></span><span class="hljs-meta"> </span><span class="hljs-comment"><span class="hljs-meta"><span class="hljs-comment">/* End of group DMA_valid_channels */</span></span></span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> </div></div> このテーブルは公式フォーラムで私に与えられましたが、公式ライブラリーにもあります。 タイマー1を使用します。=&gt;チャンネルは10番目です。 <pre> <code class="cpp hljs"><span class="hljs-comment"><span class="hljs-comment">// . DMA-&gt;CHNL_ENABLE_SET = 1&lt;&lt;10; //  10 .</span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> <div class="spoiler">  <b class="spoiler_title">次の機能があります。</b> <div class="spoiler_text"><pre> <code class="cpp hljs"><span class="hljs-comment"><span class="hljs-comment">//------------------------------------------------- // DMA    DAC. //------------------------------------------------- void DMA_to_DAC_and_TIM1 (void) { //  . DAC_ST_ADC[10-1].Destination_end_pointer = (uint32_t)C_4 + (sizeof(C_4))/2 - 1; //      (C_4 -      100 ). DAC_ST_ADC[10-1].Source_end_pointer = (uint32_t)&amp;(DAC-&gt;DAC2_DATA); //   ( )   (  DAC). DAC_ST_ADC[10-1].channel_cfg = (uint32_t)(DMA_DAC_InitST_PR); //   . DAC_ST_ADC[10-1].NULL = (uint32_t)0; // . //  . DAC_ST_ADC[10-1+32].Destination_end_pointer = (uint32_t)C_4 + sizeof(C_4) - 1; //     (C_4 -      100 ). DAC_ST_ADC[10-1+32].Source_end_pointer = (uint32_t)&amp;(DAC-&gt;DAC2_DATA); //   ( )   (  DAC). DAC_ST_ADC[10-1+32].channel_cfg = (uint32_t)(DMA_DAC_InitST_ALT); //   . DAC_ST_ADC[10-1+32].NULL = (uint32_t)0; // . //  DMA. RST_CLK-&gt;PER_CLOCK|=PCLK_EN_DMA; //  DMA. DMA-&gt;CTRL_BASE_PTR = (uint32_t)&amp;DAC_ST_ADC; //   . DMA-&gt;CFG = CFG_master_enable; //  DMA. // . DMA-&gt;CHNL_ENABLE_SET = 1&lt;&lt;10; //  10 . }</span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> </div></div><h4> タイマーを満たす </h4><div class="spoiler">  <b class="spoiler_title">まず、タイマーを有効にする必要があります（タック）。</b> <div class="spoiler_text"><img src="https://habrastorage.org/getpro/habr/post_images/522/ae8/803/522ae8803a26de831d3cf0a35951cfdb.png"><pre> <code class="cpp hljs"><span class="hljs-meta"><span class="hljs-meta">#</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> PER_CLOCK_TIMER1_ONCLK (1</span><span class="hljs-meta-string"><span class="hljs-meta"><span class="hljs-meta-string">&lt;&lt;14) //    1. RST_CLK-&gt;PER_CLOCK |= PER_CLOCK_TIMER1_ONCLK; // .</span></span></span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre></div></div> そして今、実際には、理解し始める価値があります。  3つのタイマーはすべて同じ機能を備えています。 少なくとも一見。 各タイマーには非常に豊富な機能=&gt;多くのレジスタがあります。 しかし、それらは非常に理解しやすいです。 私はタイマーの仕事を勉強する方法で熊手を会いませんでした。 タイマーで制御できるようにDMAを構成したことを覚えています。 この目的のために、一定の時間だけ待って次のデータのバッチを転送するだけで十分です。 タイマーには、4つの「比較」チャネルとメインカウンターがあります。 メインカウンターを使用すれば十分です。 <div class="spoiler">  <b class="spoiler_title">タイマーのメインレジスタを見てください。</b> <div class="spoiler_text"><img src="https://habrastorage.org/getpro/habr/post_images/ecd/b9d/27c/ecdb9d27c246646b93f93d092c811b41.png"></div>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    </div><div class="spoiler">  <b class="spoiler_title">ここで、タイマーを有効にする必要があります。</b> <div class="spoiler_text"><img src="https://habrastorage.org/getpro/habr/post_images/29d/094/71d/29d09471d8c9591a2e054ef1e6dd288b.png"><pre> <code class="cpp hljs"><span class="hljs-meta"><span class="hljs-meta">#</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> CNTRL_CNT_EN (1</span><span class="hljs-meta-string"><span class="hljs-meta"><span class="hljs-meta-string">&lt;&lt;0) //  . TIMER1-&gt;CNTRL |= CNTRL_CNT_EN; //  ,  =  .</span></span></span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> </div></div> テストとして、0xFFFFにカウントします（後で時間間隔を扱います）。 デフォルトでは、スコアは0から始まります。 <pre> <code class="cpp hljs">TIMER1-&gt;ARR = <span class="hljs-number"><span class="hljs-number">0xFFFF</span></span>; <span class="hljs-comment"><span class="hljs-comment">// ...</span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> 次に、タイマーをDMAに関連付ける必要があります。 送信が行われるイベントとして、タイマー1でCNT == ARRを選択します。これは、CNTタイマーの現在の値とARRレジスタの番号の単純な比較です。 <div class="spoiler">  <b class="spoiler_title">このために、レジスタDMA_REがあります</b> <div class="spoiler_text"><img src="https://habrastorage.org/getpro/habr/post_images/5ca/9ba/9bd/5ca9ba9bd04befdb69eb021cb2d273aa.png"> ここでは、カウンターが目的の値に達したときに接続を選択する必要があります。 <img src="https://habrastorage.org/getpro/habr/post_images/a35/3cd/ec7/a353cdec78379ab068afdb9577978b65.png"></div>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    </div> セットアップが完了したと言えますが、そうです。 これで、タイマーは、分周器なしで8 MHzのHCLK周波数からクロックされます。 値0xFFFFはすぐに到達します。 そして、伝送を追跡することはできません。 この問題を解決するには、プリディバイダーを含める必要があります。 <div class="spoiler">  <b class="spoiler_title">これらの目的のために、レジスタRST_CLK-&gt; TIM_CLOCKがクロックブロックで使用されます。</b> <div class="spoiler_text"><img src="https://habrastorage.org/getpro/habr/post_images/c5a/29c/4f1/c5a29c4f1795202d4b8cc2a04437bbbf.png"><img src="https://habrastorage.org/getpro/habr/post_images/d02/5c9/457/d025c9457404f754135ea4c4fe66f4c6.png"> トライアル用に、最大のディバイダーを含めました。 また、ここではタイマーにクロック信号を適用する必要があります。 タイマーがHCLKからプリディバイダーを介してカウントを開始したこと。 <img src="https://habrastorage.org/getpro/habr/post_images/af7/bcd/bc8/af7bcdbc83811d3081a0f972af0d02ee.png"></div>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    </div><div class="spoiler">  <b class="spoiler_title">その結果、このような機能が得られます。</b> <div class="spoiler_text"><pre> <code class="cpp hljs"><span class="hljs-meta"><span class="hljs-meta">#</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> PER_CLOCK_TIMER1_ONCLK (1</span><span class="hljs-meta-string"><span class="hljs-meta"><span class="hljs-meta-string">&lt;&lt;14) //    1. #define TIM_CLOCK_TIM1_CLK_EN (1&lt;&lt;24) //     1. #define SHARE_HCLK_TIMER 7 //   HCLK ... (0 =  , 1 = /2, 2 = /4). #define TIM_CLOCK_TIM1_BRG (SHARE_HCLK_TIMER&lt;&lt;0) //    1  SHARE_HCLK_TIMER. #define CNTRL_CNT_EN (1&lt;&lt;0) //  . #define DMA_RE_CNT_ARR_EVENT_RE (1&lt;&lt;1) //   DMA   CNT == ARR; void Init_TIMER1_to_DMA_and_DAC2 (void) { RST_CLK-&gt;PER_CLOCK |= PER_CLOCK_TIMER1_ONCLK; // . TIMER1-&gt;CNTRL |= CNTRL_CNT_EN; //  ,  =  . TIMER1-&gt;ARR = 0xFFFF; // ... TIMER1-&gt;DMA_RE |= DMA_RE_CNT_ARR_EVENT_RE; // "" DMA. RST_CLK-&gt;TIM_CLOCK |= TIM_CLOCK_TIM1_CLK_EN|TIM_CLOCK_TIM1_BRG; //    . }</span></span></span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> </div></div> 次に、例を含めると、DAC2の電圧値レジスタの値が約1秒の間隔でどのように変化するかを観察します。 さて、最初の段階は終わりました。 確かに、プロセスは配列の途中で中断されます。 実際には、タイマーは送信を再度有効にするだけです。 しかし、配列の半分を転送するとすぐに、最初の構造を「使い果たし」ました。 今、それを復元する必要があります。 このために、2番目のタイマーを使用します。 多くの人が、「DMAからの送信を中断したり、アレイの半分を転送したりしないのはなぜですか」と尋ねます。 実際のところ、DMAでは、転送の終了時にのみ割り込みを生成できます。 中間を通過するときに割り込みを発生させる機会はありません。 しかし、ここではそれほど単純ではありません。 すべてを連続して送信するのではなく、部分的に送信することを思い出してください。  DMAはこれを理解していません。  DMAダウンタイム中に割り込みが生成されます。 つまり、DMAは、データパケット全体が送信されるのではなく、配列の1つの要素のみが送信されることを理解していません。 この事実により、DMA割り込みの使用はタスクに適さなくなります。 <h4> タイマーを構成して正弦波を生成する </h4> 先ほど言ったように、構造を「復元」するには、配列の半分（配列全体の1/4）を通過した後、次の（2番目の）タイマーで割り込みを設定する必要があります。 なぜ4分の1なのか-さらに説明する。 しかしその前に、最初のタイマーを再構成します。  DMAキックの速度を決定する必要があります。 見ます。 コントローラーは8 MHzでクロックされます。 配列には100個の要素が含まれています。 思い出すように、最初のオクターブまでの音の周波数は261.63 Hzです。 アカウントレジスタの容量は0xFFFFです（この値まではカウンターが読み取ることができます）。  8,000,000 Hz / 261.63 Hz / 100ノートを分割= 305メジャーごとにDMAを「キック」します。 これは、タイマー比較レジスタの最大値よりはるかに小さいです。 したがって、事前除数を使用する必要はありません。 <div class="spoiler">  <b class="spoiler_title">両方のタイマーでクロックを供給します。</b> <div class="spoiler_text"><pre> <code class="cpp hljs">RST_CLK-&gt;PER_CLOCK |= PER_CLOCK_TIMER1_ONCLK|PER_CLOCK_TIMER2_ONCLK; <span class="hljs-comment"><span class="hljs-comment">//   1  2.</span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> </div></div> タイマークロック（ブロック全体）をオンにした後、以前に構成されたパラメーターに従ってタイマーが動作を開始することがあります。 このため、構成する前であっても、さまざまな不具合があります。 これを防ぐには、カウント単位のクロック信号を無効にする必要があります（これにより、タイマーは、割り込みなどの原因となる値までカウントする時間を持たなくなります）。 <div class="spoiler">  <b class="spoiler_title">カウントユニットのタイミングをオフにします。</b> <div class="spoiler_text"><pre> <code class="cpp hljs">RST_CLK-&gt;TIM_CLOCK = <span class="hljs-number"><span class="hljs-number">0</span></span>; <span class="hljs-comment"><span class="hljs-comment">//  .</span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> </div></div><div class="spoiler">  <b class="spoiler_title">次に、DMAへのアクセス期間を指定して有効にします。</b> <div class="spoiler_text"><pre> <code class="cpp hljs"><span class="hljs-comment"><span class="hljs-comment">//  8000000 /261.63/100 = 305. TIMER1-&gt;ARR = 305; // ... TIMER1-&gt;DMA_RE |= DMA_RE_CNT_ARR_EVENT_RE; //  DMA.</span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> </div></div> タイマー2をセットアップします。簡単にするために、分周器なしで時計を合わせます。 中断する頻度も決定します。 同じソースから両方のタイマーをクロックするという事実により、最初の構造の最後の要素が送信された瞬間に構造値を更新することはできません。  DMAは最初の構造の最後に続く要素を転送しようとすると、その端でつまずき、自​​動的に代替構造に切り替わります。 したがって、DMAがプライマリ構造が「使い果たされた」と判断し、代替からの転送を開始するまで待つ必要があります。 これを行うには、代替構造からの少なくとも1つのパケットの送信を待ちます。 その後、プライマリを再度入力することが可能になります。 同じことを代替手段で行う必要があります。 転送が終了したら、DMAがプライマリから少なくとも1つのパケットを送信するまで待つ必要があります。その後、代替を上書きできます。  100個のアイテムを転送します。 各構造で50。  50番目のギアとともに中断を引き起こす可能性がありますが、上記の理由により、少なくとも51番目のギアを待つ必要があります。 変位の影響を受けないように、25ギアごとに両方の構造をチェックします。 <div class="spoiler">  <b class="spoiler_title">したがって、タイマーの期間は305 * 25になります。</b> <div class="spoiler_text"><pre> <code class="cpp hljs">TIMER2-&gt;ARR = <span class="hljs-number"><span class="hljs-number">305</span></span>*<span class="hljs-number"><span class="hljs-number">25</span></span>; <span class="hljs-comment"><span class="hljs-comment">//   .</span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> </div></div><h4> 割り込みについて少し </h4> タイマーが目的の値に達したときに割り込みが発生するためには、それが必要です。 <ul><li><div class="spoiler">  <b class="spoiler_title">イベント割り込みを許可する：TIMERx-&gt; IEレジスタで、カウンターが目的の値に達する</b> <div class="spoiler_text"><img src="https://habrastorage.org/getpro/habr/post_images/811/beb/122/811beb1220a2927aaee9f5d7b16b2a58.png"><img src="https://habrastorage.org/getpro/habr/post_images/f9f/a89/808/f9fa898086f7c4c90415f23e134ca812.png"><pre> <code class="cpp hljs"><span class="hljs-meta"><span class="hljs-meta">#</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> TIMERx_IE_CNT_ARR_EVENT_IE (1</span><span class="hljs-meta-string"><span class="hljs-meta"><span class="hljs-meta-string">&lt;&lt;1) //:       CNT  ARR. TIMER2-&gt;IE = TIMERx_IE_CNT_ARR_EVENT_IE; //   .</span></span></span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> </div></div></li><li><div class="spoiler">  <b class="spoiler_title">割り込みのフラグをクリアTIMERy-&gt; STATUS</b> <div class="spoiler_text"> 実際、割り込みが有効になると、そのフラグは自動的に設定されます。 構成の直後に割り込みが入らないようにするには、リセットする必要があります。 <pre> <code class="cpp hljs">TIMER2-&gt;STATUS=<span class="hljs-number"><span class="hljs-number">0</span></span>; <span class="hljs-comment"><span class="hljs-comment">//  .</span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> </div></div></li><li><div class="spoiler">  <b class="spoiler_title">NVIC割り込みコントローラーでタイマー割り込みを有効にします。</b> <div class="spoiler_text"> このコントローラーのトピックに関する別の記事を強調する価値がありますが、この記事のフレームワーク内では、コントローラーがタイマーに割り込みが必要であることを「通知」するために、この割り込みを有効にする必要があります。 これは、レジスタNVIC-&gt; ISER [0]で行われます。 <img src="https://habrastorage.org/getpro/habr/post_images/e30/cfd/d53/e30cfdd537d2ee4fea91fae24427d867.png"> タイマーからの割り込みがある番号を調べる必要があります。 これを行うには、スタートアップファイルに移動し、目的の名前のベクターを探します。 <pre> <code class="cpp hljs">DCD Timer2_IRQHandler ; IRQ15</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> <pre> <code class="cpp hljs">NVIC-&gt;ISER[<span class="hljs-number"><span class="hljs-number">0</span></span>] = <span class="hljs-number"><span class="hljs-number">1</span></span>&lt;&lt;<span class="hljs-number"><span class="hljs-number">15</span></span>; <span class="hljs-comment"><span class="hljs-comment">//    2.</span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> </div></div></li><li><div class="spoiler">  <b class="spoiler_title">割り込みハンドラー関数を作成し、その中の割り込みフラグをリセットする必要があります（これは手動で行われます）。</b> <div class="spoiler_text"><pre> <code class="cpp hljs"><span class="hljs-function"><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">void</span></span></span><span class="hljs-function"> </span><span class="hljs-title"><span class="hljs-function"><span class="hljs-title">Timer2_IRQHandler</span></span></span><span class="hljs-function"> </span><span class="hljs-params"><span class="hljs-function"><span class="hljs-params">(</span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">void</span></span></span></span><span class="hljs-function"><span class="hljs-params">)</span></span></span><span class="hljs-function"> </span><span class="hljs-comment"><span class="hljs-function"><span class="hljs-comment">// . TIMER2-&gt;STATUS=0; }</span></span></span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> </div></div></li></ul><h4> タイマーの設定を終了します。 </h4><div class="spoiler">  <b class="spoiler_title">タイマーのパラメーターを指定した後、それらの作業を有効にし、カウンターにクロック信号を適用する必要があります。</b> <div class="spoiler_text"><pre> <code class="cpp hljs"><span class="hljs-meta"><span class="hljs-meta">#</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> CNTRL_CNT_EN (1</span><span class="hljs-meta-string"><span class="hljs-meta"><span class="hljs-meta-string">&lt;&lt;0) //  . #define TIM_CLOCK_TIM1_CLK_EN (1&lt;&lt;24) //     1. #define TIM_CLOCK_TIM2_CLK_EN (1&lt;&lt;25) //     2. TIMER1-&gt;CNTRL = CNTRL_CNT_EN; //  . TIMER2-&gt;CNTRL = CNTRL_CNT_EN; RST_CLK-&gt;TIM_CLOCK = TIM_CLOCK_TIM1_CLK_EN|TIM_CLOCK_TIM2_CLK_EN; //    .</span></span></span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre></div></div><div class="spoiler">  <b class="spoiler_title">設定の結果は関数でした。</b> <div class="spoiler_text"><pre> <code class="cpp hljs"><span class="hljs-meta"><span class="hljs-meta">#</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> PER_CLOCK_TIMER1_ONCLK (1</span><span class="hljs-meta-string"><span class="hljs-meta"><span class="hljs-meta-string">&lt;&lt;14) //    1. #define PER_CLOCK_TIMER2_ONCLK (1&lt;&lt;15) //    1. #define TIM_CLOCK_TIM1_CLK_EN (1&lt;&lt;24) //     1. #define SHARE_HCLK_TIMER1 7 //   HCLK ... (0 =  , 1 = /2, 2 = /4). #define TIM_CLOCK_TIM1_BRG (SHARE_HCLK_TIMER1&lt;&lt;0) //    1  SHARE_HCLK_TIMER. #define CNTRL_CNT_EN (1&lt;&lt;0) //  . #define CNTRL_EVENT_SEL (1&lt;&lt;8) //   : CNT == ARR; #define DMA_RE_CNT_ARR_EVENT_RE (1&lt;&lt;1) //   DMA   CNT == ARR; #define IE_CNT_ARR_EVENT_IE (1&lt;&lt;1) //     CNT == ARR; #define TIM_CLOCK_TIM2_CLK_EN (1&lt;&lt;25) //     2. #define SHARE_HCLK_TIMER2 7 //   HCLK ... (0 =  , 1 = /2, 2 = /4). #define TIM_CLOCK_TIM2_BRG (SHARE_HCLK_TIMER2&lt;&lt;8)//    1  SHARE_HCLK_TIMER. #define CH1_CNTRL_CAP_nPWM_Z (1&lt;&lt;15) //:    "". #define CH1_CNTRL_CHPSC_8 (3&lt;&lt;6) //:      8. #define CHy_CNTRL2_CCR1_EN (1&lt;&lt;2) //:   1. #define TIMERx_IE_CNT_ARR_EVENT_IE (1&lt;&lt;1) //:       CNT  ARR. void Init_TIMER1_to_DMA_and_DAC2 (void) { RST_CLK-&gt;PER_CLOCK |= PER_CLOCK_TIMER1_ONCLK|PER_CLOCK_TIMER2_ONCLK; //   1  2. RST_CLK-&gt;TIM_CLOCK = 0; //  . //  8000000 /261.63/100 = 305. TIMER1-&gt;ARR = 305; // ... TIMER1-&gt;DMA_RE |= DMA_RE_CNT_ARR_EVENT_RE; //  DMA. TIMER2-&gt;ARR = 305*25; //   . TIMER2-&gt;IE = TIMERx_IE_CNT_ARR_EVENT_IE; //   . TIMER2-&gt;STATUS=0; //  . NVIC-&gt;ISER[0] = 1&lt;&lt;15; //    2. TIMER1-&gt;CNTRL = CNTRL_CNT_EN; //  . TIMER2-&gt;CNTRL = CNTRL_CNT_EN; RST_CLK-&gt;TIM_CLOCK = TIM_CLOCK_TIM1_CLK_EN|TIM_CLOCK_TIM2_CLK_EN; //    . }</span></span></span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> </div></div><h4> 構造を変更する機能を記述します。 </h4> 中断について説明しました。 チェックインするだけです。プライマリ構造が終了し、代替構造から少なくとも1ブロックが転送された場合、プライマリ構造を上書きします。 セカンダリと同じ。 また、最初の構造の転送後-DMAがチャネルをブロックすることも忘れないでください。 送信がタイマー1からの「キック」に沿って進むように、その作業を再度許可する必要があります。 <div class="spoiler">  <b class="spoiler_title">結果として生じる中断</b> <div class="spoiler_text"><pre> <code class="cpp hljs"><span class="hljs-meta"><span class="hljs-meta">#</span><span class="hljs-meta-keyword"><span class="hljs-meta"><span class="hljs-meta-keyword">define</span></span></span><span class="hljs-meta"> ST_Play_P (DAC_ST_ADC[10-1].channel_cfg &amp; (1023</span><span class="hljs-meta-string"><span class="hljs-meta"><span class="hljs-meta-string">&lt;&lt;4)) //       . #define ST_Play_ALT (DAC_ST_ADC[10-1+32].channel_cfg &amp; (1023&lt;&lt;4)) //       . void Timer2_IRQHandler (void) // . { if ((ST_Play_P == 0) &amp;&amp; (ST_Play_ALT &lt;= (48&lt;&lt;4))) //         -   2-. DAC_ST_ADC[10-1].channel_cfg = (uint32_t)(DMA_DAC_InitST_PR); if ((ST_Play_ALT == 0) &amp;&amp; (ST_Play_P &lt;= (48&lt;&lt;4))) DAC_ST_ADC[10-1+32].channel_cfg = (uint32_t)(DMA_DAC_InitST_ALT); DMA-&gt;CHNL_ENABLE_SET = 1&lt;&lt;10; TIMER2-&gt;STATUS=0; }</span></span></span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> </div></div> 最後の例のメイン関数のコードは、新しい関数をオンにしてSysTickをオフにすることによってのみ変更されます。 <div class="spoiler">  <b class="spoiler_title">彼がいる。</b> <div class="spoiler_text"><pre> <code class="cpp hljs"><span class="hljs-function"><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">int</span></span></span><span class="hljs-function"> </span><span class="hljs-title"><span class="hljs-function"><span class="hljs-title">main</span></span></span><span class="hljs-function"> </span><span class="hljs-params"><span class="hljs-function"><span class="hljs-params">(</span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">void</span></span></span></span><span class="hljs-function"><span class="hljs-params">)</span></span></span><span class="hljs-function"> </span></span>{ HSE_Clock_ON(); <span class="hljs-comment"><span class="hljs-comment">//  HSE . HSE_Clock_OffPLL(); // ""      HSE . Buzzer_out_DAC_init(); //   . DAC_Init(); // . DMA_to_DAC_and_TIM1(); // DMA    DAC2   1. Init_TIMER1_to_DMA_and_DAC2(); //  1. while (1) { } }</span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> </div></div> プログラムを実行すると、出力に次の図が表示されます。 <img src="https://habrastorage.org/getpro/habr/post_images/971/2ce/e19/9712cee19a9e684e4538fef60566d643.png">  <a href="https://github.com/Vadimatorik/k1986be92qi_dac_dma_tim">Github</a>コード。 <h4> バグについて </h4><div class="spoiler">  <b class="spoiler_title">構造の変化の瞬間を選択することに長い間苦しんでいました。</b>  <b class="spoiler_title">いつも、このようなものが出てきました。</b> <div class="spoiler_text"><img src="https://habrastorage.org/getpro/habr/post_images/9c3/c5b/7a6/9c3c5b7a6a262e28de45bb61204eddcf.png"></div>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    </div><h4> まとめると </h4>  DMAを別の方法で見て、その利点を活用することができました。 次の記事では、スキルを統合し、オルゴールの外観を作成し、その後プレーヤーを作成します。 <div class="spoiler">  <b class="spoiler_title">以前の記事のリスト。</b> <div class="spoiler_text"><ul><li>  1. <a href="http://habrahabr.ru/post/255199/">STM32F103からK1986BE92QIに渡します。</a>  <a href="http://habrahabr.ru/post/255199/">または、ロシアのマイクロコントローラの最初の知り合い。</a> </li><li>  2. <a href="http://habrahabr.ru/post/255323/">STM32からロシアのマイクロコントローラーK1986BE92QIに渡します。</a>  <a href="http://habrahabr.ru/post/255323/">keilでプロジェクトを設定し、LEDを点滅させます。</a> </li><li>  3. <a href="http://habrahabr.ru/post/255415/">STM32からロシアのマイクロコントローラーK1986BE92QIに渡します。</a>  <a href="http://habrahabr.ru/post/255415/">システムタイマー（SysTick）。</a> </li><li>  4. <a href="http://habrahabr.ru/post/255479/">STM32からロシアのマイクロコントローラーK1986BE92QIに渡します。</a>  <a href="http://habrahabr.ru/post/255479/">クロック設定</a> </li><li>  5. <a href="http://habrahabr.ru/post/255513/">STM32からロシアのマイクロコントローラーK1986BE92QIに渡します。</a>  <a href="http://habrahabr.ru/post/255513/">実用化：音声を生成および再生します。</a>  <a href="http://habrahabr.ru/post/255513/">パート1：矩形および正弦波信号を生成します。</a>  <a href="http://habrahabr.ru/post/255513/">DACのマスタリング（DAC）。</a> </li><li>  6. <a href="http://habrahabr.ru/post/256091/">STM32からロシアのマイクロコントローラーK1986BE92QIに渡します。</a>  <a href="http://habrahabr.ru/post/256091/">実用化：音声を生成および再生します。</a>  <a href="http://habrahabr.ru/post/256091/">パート2：正弦波信号を生成します。</a>  <a href="http://habrahabr.ru/post/256091/">DMAをマスターします。</a> </li></ul></div></div></div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+<section class="more-articles-navigation-panel js-more-articles-navigation-panel">
+<h4>More articles:</h4>
+<nav class="list-of-articles-container js-list-of-articles-container"><ul class="list-of-pages js-list-of-pages">
+<li><a href="../J256551/index.html">BigDataを操作するためのアプローチとツール-すべてが始まったばかりで、始まったばかり</a></li>
+<li><a href="../J256559/index.html">PCB実装：ゼロからのクイックスタート</a></li>
+<li><a href="../J256567/index.html">DataTalks＃2：データの可視化</a></li>
+<li><a href="../J256571/index.html">プログラマー==創造性|| プログラマー！=創造性</a></li>
+<li><a href="../J256573/index.html">CTBロッカー。 支払うことにしました</a></li>
+<li><a href="../J256579/index.html">U2F USBトークンを使用したブラウザーでの2段階認証</a></li>
+<li><a href="../J256587/index.html">問題を引き起こす3つのCSSの質問</a></li>
+<li><a href="../J256589/index.html">9か月で独自のCSSプリプロセッサを作成する方法に関するストーリー</a></li>
+<li><a href="../J25659/index.html">Mac OS X用Google App Engineランチャー</a></li>
+<li><a href="../J25660/index.html">あなたは何が欲しい-富または力？</a></li>
+</ul></nav>
+</section><br />
+<a href="../../allArticles.html"><strong>All Articles</strong></a>
+<script src="../../js/main.js"></script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript" >
+  (function (d, w, c) {
+      (w[c] = w[c] || []).push(function() {
+          try {
+              w.yaCounter70218013 = new Ya.Metrika({
+                  id:70218013,
+                  clickmap:true,
+                  trackLinks:true,
+                  accurateTrackBounce:true,
+                  webvisor:true
+              });
+          } catch(e) { }
+      });
+
+      var n = d.getElementsByTagName("script")[0],
+          s = d.createElement("script"),
+          f = function () { n.parentNode.insertBefore(s, n); };
+      s.type = "text/javascript";
+      s.async = true;
+      s.src = "https://mc.yandex.ru/metrika/watch.js";
+
+      if (w.opera == "[object Opera]") {
+          d.addEventListener("DOMContentLoaded", f, false);
+      } else { f(); }
+  })(document, window, "yandex_metrika_callbacks");
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/70218013" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+
+<!-- Google Analytics -->
+  <script>
+    window.ga = function () { ga.q.push(arguments) }; ga.q = []; ga.l = +new Date;
+    ga('create', 'G-FEDBM7F51Q', 'auto'); ga('send', 'pageview')
+  </script>
+  <script src="https://www.google-analytics.com/analytics.js" async defer></script>
+
+</section>
+
+<footer class="page-footer">
+  <div class="page-footer-legal-info-container page-footer-element">
+    <p>
+      Clever Geek | <span class="page-footer-legal-info-year js-page-footer-legal-info-year">2020</span>
+    </p>
+  </div>
+  <div class="page-footer-counters-container page-footer-element">
+    <div class="company-info js-company-info" itemscope="" itemtype="http://schema.org/Organization">
+      <span itemprop="name">Western Town Media (WTM)</span>
+      <div itemprop="address" itemscope="" itemtype="http://schema.org/PostalAddress">
+        <span itemprop="streetAddress">1968 Stoney Lonesome Road</span>
+        <br>
+        <span itemprop="postalCode">PA 18640</span>
+        <span itemprop="addressLocality">Pittston, USA</span>
+      </div>
+      <span itemprop="telephone">570-362-1316</span>
+    </div>
+    <script type="application/ld+json">
+      {
+        "@context": "http://schema.org",
+        "@type": "Organization",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Pittston, USA",
+          "postalCode": "PA 18640",
+          "streetAddress": "1968 Stoney Lonesome Road"
+        },
+        "name": "Western Town Media (WTM)",
+        "telephone": "570-362-1316"
+      }
+    </script>
+  </div>
+</footer>
+  
+</body>
+
+</html>
