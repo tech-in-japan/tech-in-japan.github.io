@@ -1,0 +1,763 @@
+<!doctype html>
+<html class="no-js" lang="en">
+
+<head>
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-FEDBM7F51Q"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-FEDBM7F51Q');
+  </script>
+
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <title>👩🏽‍🤝‍👨🏻 ⚙️ ✡️ RAM内のDBMSで状態のスナップショットを撮るときに、応答時間とメモリ消費の急増を回避する方法 🥖 🎊 💪🏾</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <meta name="description" content="私の最近の記事「RAM内のDBMSとは何か、どのように効率的にデータを保存するか」を覚えていますか？ その中で、データの安全性を確保するために、RAM内のDBMSで使用されるメカニズムの概要を簡単に説明しました。 それは、トランザクションをログに書き込むことと状態のスナップショットを取ることの2つの...">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml"/>
+
+  <link rel="stylesheet" href="../../css/main.css">
+
+  <link href="https://fonts.googleapis.com/css?family=Quicksand&display=swap" rel="stylesheet">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+  <script>document.write('<script src="https://pagea' + 'd2.googles' + 'yndication.com/pagea' + 'd/js/a' + 'dsby' + 'google.js"><\/script>')</script>
+  <script>
+        var superSpecialObject = {};
+        superSpecialObject['google_a' + 'd_client'] = 'ca-p' + 'ub-6974184241884155';
+        superSpecialObject['enable_page_level_a' + 'ds'] = true;
+       (window['a' + 'dsbygoogle'] = window['a' + 'dsbygoogle'] || []).push(superSpecialObject);
+  </script>
+</head>
+
+<body>
+  <!--[if lte IE 9]>
+    <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience and security.</p>
+  <![endif]-->
+  <header class="page-header js-page-header">
+    <a class="page-header-logo-container" href="https://tech-in-japan.github.io/index.html"></a>
+    <div class="page-header-text">Clever Geek Handbook</div>
+  </header>
+  <section class="page js-page"><h1>RAM内のDBMSで状態のスナップショットを撮るときに、応答時間とメモリ消費の急増を回避する方法</h1><div class="post__text post__text-html js-mediator-article" id="post-content-body" data-io-article-url="https://habr.com/ru/company/mailru/blog/317150/"><div style="text-align:center;"><img src="https://habrastorage.org/files/8d6/e80/7a6/8d6e807a667c4a448874c87a185cb187.jpg"></div>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     私の最近の記事<a href="https://habrahabr.ru/company/mailru/blog/316634/">「RAM内のDBMSとは何か、どのように効率的にデータを保存するか」を</a>覚えて<a href="https://habrahabr.ru/company/mailru/blog/316634/">い</a>ますか？ その中で、データの安全性を確保するために、RAM内のDBMSで使用されるメカニズムの概要を簡単に説明しました。 それは、トランザクションをログに書き込むことと状態のスナップショットを取ることの2つの主要なメカニズムについてでした。 トランザクションログを操作する原則の一般的な説明を行い、スナップショットのトピックについてのみ触れました。 したがって、この記事ではスナップショットについて詳しく説明します。RAMのDBMSの状態のスナップショットを取得する最も簡単な方法から始め、この方法に関連するいくつかの問題を強調し、このメカニズムが<a href="https://en.wikipedia.org/wiki/Tarantool">Tarantool</a>でどのように実装されるかを<a href="https://en.wikipedia.org/wiki/Tarantool">詳しく説明し</a>ます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     したがって、すべてのデータをRAMに保存するDBMSがあります。 前の記事で述べたように、状態のスナップショットを取得するには、このすべてのデータをディスクに書き込む必要があります。 これは、すべてのテーブルと各テーブルのすべての行を調べて、 <i>write</i>システムコールを介してこれらすべてを1つのファイルのディスクに書き込む必要があることを意味します。 一見簡単です。 ただし、問題はデータベース内のデータが常に変化していることです。 スナップショットを撮るときにデータ構造を凍結しても、結果として、ディスク上のデータベースの一貫性のない状態を取得する可能性があります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <a name="habracut"></a>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     一貫した状態を達成する方法は？ 最も簡単な（そして最も粗い）方法は、データベース全体を事前に凍結し、状態のスナップショットを撮り、再び凍結を解除することです。 そして、それは動作します。 データベースはかなりの期間凍結することができます。 たとえば、データサイズが256 GBでハードドライブの最大容量が100 MB / sの場合、写真の撮影には256 GB /（100 MB / s）-約2560秒、または（再び）40分かかります。  DBMSは引き続き読み取り要求を処理できますが、データ変更要求を満たすことはできません。  「ほんとに？」と叫ぶ。 数えましょう：たとえば、1日のダウンタイムが40分であれば、DBMSは最高のケースで97％の時間で完全に動作します（実際、もちろん、他の多くの要因がダウンタイムの期間に影響するため、この割合は低くなります）。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     どのようなオプションがありますか？ 何が起こっているのかを詳しく見てみましょう。 すべてのデータを凍結したのは、遅いデバイスにコピーする必要があるためだけです。 しかし、速度を上げるためにメモリを犠牲にするとどうなりますか？ 一番下の行は、すべてのデータをRAMの別の領域にコピーしてから、コピーを低速のディスクに書き込むことです。 これはより良いように見えますが、それはさまざまな重大度の少なくとも3つの問題を伴います： 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ol><li> すべてのデータを凍結する必要があります。  1 GB / sの速度でデータをメモリ領域にコピーするとします（これは楽観的すぎます。実際には、多少の高度なデータ構造では速度が200-500 MB / sになる可能性があるためです）。  256 GB /（1 GB / s）は256秒、つまり約4分です。  1日あたり4分のダウンタイム、つまりシステムの可用性時間の99.7％が得られます。 もちろん、これは97％よりも優れていますが、それほどではありません。 </li><li>  RAM内の別のバッファーにデータをコピーしたらすぐに、ディスクに書き込む必要があります。 コピーが記録されている間、メモリ内の元のデータは変化し続けます。 何らかの方法で追跡する必要があります。たとえば、トランザクション識別子をスナップショットとともに保存して、どのトランザクションが最後のスナップショットにあったかを明確にします。 複雑なことは何もありませんが、それでもそれを行う必要があります。 </li><li>  RAM容量の要件は2倍になります。 実際、データのサイズの2倍のメモリが<b>常に</b>必要です。 強調するのは、状態のスナップショットを撮るだけでなく、サーバーのメモリ量を増やして写真を撮ってから再びメモリバーを引っ張ることができないためです。 </li></ol>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     この問題を解決する1つの方法は、 <i><a href="https://en.wikipedia.org/wiki/Fork_%2528system_call%2529">fork</a></i>システムコールによって提供される<i>コピーオンライト</i> <a href="https://en.wikipedia.org/wiki/Copy-on-write">メカニズム</a> （以降、簡潔にするために、 <i>コピーオンライト</i>の英語の略語<i>COW</i>を使用します）を使用することです。 この呼び出しの結果、仮想アドレス空間とすべてのデータの読み取り専用コピーを備えた別のプロセスが作成されます。 すべての変更は親プロセスで発生するため、読み取り専用コピーが使用されます。 そのため、プロセスのコピーを作成し、ゆっくりとデータをディスクに書き込みます。 問題は残っています：以前のコピーアルゴリズムとの違いは何ですか？ その答えは、Linuxで使用されるCOWメカニズムにあります。 上記で少し述べたように、COWはコピーオンライトを意味する略語です。 録音中のコピー。 このメカニズムの本質は、子プロセスが最初に親プロセスとともに<a href="https://en.wikipedia.org/wiki/Page_%2528computer_memory%2529">ページメモリを</a>使用することです。 プロセスの1つがRAMのデータを変更するとすぐに、対応するページのコピーが作成されます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     当然、ページのコピーは応答時間の増加につながります。これは、実際のコピー操作に加えて、さらにいくつかのことが起こるためです。 通常、ページサイズは4 KBです。 データベース内の小さな値を変更するとします。 まず、 <a href="https://en.wikipedia.org/wiki/Page_fault">ページがないために中断があります</a> 。  <i>fork</i>呼び出しの後、親プロセスと子プロセスのすべてのページは読み取り専用です。 その後、システムはカーネルモードに切り替わり、新しいページを選択し、古いページから4 KBをコピーして、再びユーザーモードに戻ります。 これは非常に簡略化された説明であり、実際に何が起こっているかについての詳細は、 <a href="https://en.wikipedia.org/wiki/Kernel_same-page_merging">リンク</a>を読むことができます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     変更が1つだけでなく複数のページに影響する場合（ツリーなどのデータ構造を使用している場合は非常に可能性が高い）、上記のイベントシーケンスが何度も繰り返され、DBMSのパフォーマンスが大幅に低下する可能性があります。 高負荷では、これにより応答時間が大幅に増加し、ダウンタイムが短くなる可能性があります。 さらに、多数のページが親プロセスで任意に更新されます。その結果、ほとんどすべてのデータベースをコピーでき、その結果、必要なRAMの量が2倍になります。 一般に、運がよければ、データベースの応答時間とダウンタイムにジャンプはありません。そうでない場合は、両方の準備をしてください。 そうそう、メモリ消費量の2倍を忘れないでください。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <i>fork</i>のもう1つの問題は、このシステムコール<a href="https://en.wikipedia.org/wiki/Page_table">がページ記述子テーブルを</a>コピー<a href="https://en.wikipedia.org/wiki/Page_table">することです</a> 。  256 GBのメモリを使用している場合、このテーブルのサイズは数百メガバイトに達する可能性があるため、プロセスが1〜2秒フリーズし、応答時間が長くなる可能性があります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     もちろん<i>fork</i>を使用することは万能薬ではありませんが、これまでのところこれが最善です。 実際、人気のあるインメモリDBMSの中には、 <a href="http://redis.io/topics/persistence">Redisの</a>ように<i>フォーク</i>を使用して状態スナップショットを作成するものがあります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     ここで何か改善できますか？  COWメカニズムを見てみましょう。 コピーは4 KBです。  1バイトのみを変更すると、ページ全体がとにかくコピーされます（ツリーの場合、リバランスが不要な場合でも、多くのページがコピーされます）。 しかし、実際に変更されたメモリのセクション、または変更された値のみをコピーする独自のCOWメカニズムを実装するとどうなりますか？ 当然、このような実装はシステムメカニズムの完全な代替として機能するのではなく、状態のスナップショットを取得するためにのみ使用されます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     改善の本質は次のとおりです。すべてのデータ構造（ツリー、ハッシュテーブル、テーブルスペース）が各要素の多くのバージョンを格納できることを確認します。 この考え方は、 <a href="https://en.wikipedia.org/wiki/Multiversion_concurrency_control">マルチバージョンの同時アクセス制御に</a>近いものです。 違いは、この改善は同時アクセス制御自体には使用されず、状態のスナップショットの作成にのみ使用されることです。 スナップショットの作成を開始するとすぐに、すべてのデータ変更操作により、変更する要素の新しいバージョンが作成されますが、古いバージョンはすべてアクティブのままであり、スナップショットの作成に使用されます。 以下の画像をご覧ください。 このロジックは、ツリー、ハッシュテーブル、およびテーブルスペースに適用されます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <div style="text-align:center;"><img src="https://habrastorage.org/files/c71/473/3f1/c714733f197d4bd497af883147202a4d.png"></div>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <div style="text-align:center;"><img src="https://habrastorage.org/files/0e2/1d2/10c/0e21d210c1b4444a8444196853c598cb.png"></div>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <div style="text-align:center;"><img src="https://habrastorage.org/files/62f/5fa/39a/62f5fa39a694469aa80a664847eb565a.png"></div>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     ご覧のとおり、要素には古いバージョンと新しいバージョンの両方を含めることができます。 たとえば、表スペースの最後の画像では、値3、4、5、および8には2つのバージョン（古いバージョンと対応する新しいバージョン）があり、その他（1、2、6、7、9）にはそれぞれ1つのバージョンがあります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     変更は新しいバージョンでのみ発生します。 古いバージョンは、スナップショットを取るときの読み取り操作に使用されます。  COWメカニズムの実装とシステムメカニズムの主な違いは、4 KBページ全体をコピーするのではなく、実際に変更されたデータのごく一部のみをコピーすることです。 たとえば、4バイトの整数を更新すると、このメカニズムによりこの数値のコピーが作成され、これらの4バイトのみがコピーされます（1つの要素の2つのバージョンを維持するための料金としてさらに数バイト）。 そして今、比較のために、システムCOWの動作を見てください：4096バイトがコピーされ、ページが中断され、コンテキストが切り替わります（そのようなスイッチはそれぞれ約1 KBのメモリのコピーと同等です）-そしてこれはすべて数回繰り返されます。 スナップショットを撮るときに、たった1つの4バイトの数字全体を更新するのは面倒ですか？ 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     バージョン1.6.6（ <i>fork</i>を使用する前）からTarantoolでスナップショットを取得するために、独自のCOWメカニズムの実装を使用します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     このトピックに関する新しい記事では、稼働中のMail.Ru Groupサーバーから興味深い詳細とグラフを作成しています。 ニュースをフォローしてください。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     記事の内容に関するすべての質問は、元の<a href="https://habrahabr.ru/users/danikin/" class="user_link">danikinの</a>著者、メールおよびクラウドサービスMail.Ru Groupのテクニカルディレクターに宛ててください。 </div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+<section class="more-articles-navigation-panel js-more-articles-navigation-panel">
+<h4>More articles:</h4>
+<nav class="list-of-articles-container js-list-of-articles-container"><ul class="list-of-pages js-list-of-pages">
+<li><a href="../J317136/index.html">サイトの広告システムから最大の収入を得る方法</a></li>
+<li><a href="../J317138/index.html">アクセスドメインへのゲートウェイとしてのアルカテルルーセントサービスルーター</a></li>
+<li><a href="../J317140/index.html">OpenPOWERシステム向けOpenBMCの内部</a></li>
+<li><a href="../J317142/index.html">[SPb、アナウンスメント]開発者向けのブロックチェーンに関するAlexander ChepurnyとのCodeFreezeミーティング</a></li>
+<li><a href="../J317144/index.html">ロシアのサービスがアメリカよりも優れている場合、または悪の計算機との人文科学の戦い</a></li>
+<li><a href="../J317152/index.html">MitM攻撃を可能にするAirDroidアプリケーションで見つかった重大な脆弱性</a></li>
+<li><a href="../J317154/index.html">事例：デザイナーの目を通してゲームを開発する</a></li>
+<li><a href="../J317156/index.html">GitLab 8.14がリリースされました</a></li>
+<li><a href="../J317158/index.html">セグメントルーティング：方法と理由</a></li>
+<li><a href="../J317160/index.html">インタラクティブな着陸またはインスタントメッセンジャーを使用した変換の爆発方法</a></li>
+</ul></nav>
+</section><br />
+<a href="../../allArticles.html"><strong>All Articles</strong></a>
+<script src="../../js/main.js"></script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript" >
+  (function (d, w, c) {
+      (w[c] = w[c] || []).push(function() {
+          try {
+              w.yaCounter70218013 = new Ya.Metrika({
+                  id:70218013,
+                  clickmap:true,
+                  trackLinks:true,
+                  accurateTrackBounce:true,
+                  webvisor:true
+              });
+          } catch(e) { }
+      });
+
+      var n = d.getElementsByTagName("script")[0],
+          s = d.createElement("script"),
+          f = function () { n.parentNode.insertBefore(s, n); };
+      s.type = "text/javascript";
+      s.async = true;
+      s.src = "https://mc.yandex.ru/metrika/watch.js";
+
+      if (w.opera == "[object Opera]") {
+          d.addEventListener("DOMContentLoaded", f, false);
+      } else { f(); }
+  })(document, window, "yandex_metrika_callbacks");
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/70218013" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+
+<!-- Google Analytics -->
+  <script>
+    window.ga = function () { ga.q.push(arguments) }; ga.q = []; ga.l = +new Date;
+    ga('create', 'G-FEDBM7F51Q', 'auto'); ga('send', 'pageview')
+  </script>
+  <script src="https://www.google-analytics.com/analytics.js" async defer></script>
+
+</section>
+
+<footer class="page-footer">
+  <div class="page-footer-legal-info-container page-footer-element">
+    <p>
+      Clever Geek | <span class="page-footer-legal-info-year js-page-footer-legal-info-year">2020</span>
+    </p>
+  </div>
+  <div class="page-footer-counters-container page-footer-element">
+    <div class="company-info js-company-info" itemscope="" itemtype="http://schema.org/Organization">
+      <span itemprop="name">Western Town Media (WTM)</span>
+      <div itemprop="address" itemscope="" itemtype="http://schema.org/PostalAddress">
+        <span itemprop="streetAddress">1968 Stoney Lonesome Road</span>
+        <br>
+        <span itemprop="postalCode">PA 18640</span>
+        <span itemprop="addressLocality">Pittston, USA</span>
+      </div>
+      <span itemprop="telephone">570-362-1316</span>
+    </div>
+    <script type="application/ld+json">
+      {
+        "@context": "http://schema.org",
+        "@type": "Organization",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Pittston, USA",
+          "postalCode": "PA 18640",
+          "streetAddress": "1968 Stoney Lonesome Road"
+        },
+        "name": "Western Town Media (WTM)",
+        "telephone": "570-362-1316"
+      }
+    </script>
+  </div>
+</footer>
+  
+</body>
+
+</html>
