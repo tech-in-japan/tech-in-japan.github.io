@@ -1,0 +1,2314 @@
+<!doctype html>
+<html class="no-js" lang="en">
+
+<head>
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-FEDBM7F51Q"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-FEDBM7F51Q');
+  </script>
+
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <title>⛴️ 🤙🏾 👝 1つのサーバーアプリケーションでのメモリリークについて ♈️ 🕠 🔠</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <meta name="description" content="このノートを読んだ後、FreeBSDのサーバーアプリケーションで予期しないメモリリークが発生した後に何を経験しなければならないかがわかります。 そのような問題を検出する現代の手段はこの環境に存在し、それらの最も強力なものが曲がった手では完全に役に立たないのはなぜですか。 
+  
+  
+  
+ 木曜日...">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml"/>
+
+  <link rel="stylesheet" href="../../css/main.css">
+
+  <link href="https://fonts.googleapis.com/css?family=Quicksand&display=swap" rel="stylesheet">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+  <script>document.write('<script src="https://pagea' + 'd2.googles' + 'yndication.com/pagea' + 'd/js/a' + 'dsby' + 'google.js"><\/script>')</script>
+  <script>
+        var superSpecialObject = {};
+        superSpecialObject['google_a' + 'd_client'] = 'ca-p' + 'ub-6974184241884155';
+        superSpecialObject['enable_page_level_a' + 'ds'] = true;
+       (window['a' + 'dsbygoogle'] = window['a' + 'dsbygoogle'] || []).push(superSpecialObject);
+  </script>
+</head>
+
+<body>
+  <!--[if lte IE 9]>
+    <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience and security.</p>
+  <![endif]-->
+  <header class="page-header js-page-header">
+    <a class="page-header-logo-container" href="https://tech-in-japan.github.io/index.html"></a>
+    <div class="page-header-text">Clever Geek Handbook</div>
+  </header>
+  <section class="page js-page"><h1>1つのサーバーアプリケーションでのメモリリークについて</h1><div class="post__text post__text-html js-mediator-article" id="post-content-body" data-io-article-url="https://habr.com/ru/post/354370/"><img src="https://habrastorage.org/webt/_f/sp/r4/_fspr4nsyfwkgj-qhemp25h5ziu.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     このノートを読んだ後、FreeBSDのサーバーアプリケーションで予期しないメモリリークが発生した後に何を経験しなければならないかがわかります。 そのような問題を検出する現代の手段はこの環境に存在し、それらの最も強力なものが<s>曲がった手では</s>完全に役に立たないの<s>は</s>なぜですか。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <a name="habracut"></a>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     木曜日のある午後、Zabbixは50台のサーバーのうち5台がスワップセクションのスペース不足の通知を送信しました。  CPVD（空きメモリ）のグラフは、問題の規模を明確に示しています（右側のマウンドは、スワップでの混雑によるメモリの解放です）。 幸いなことに、金曜日が先にあり、週末に落ち着いてすべてを修正できます。 その瞬間、誰も原因を見つけて排除するのに6日以上かかるとは想像もしていませんでした。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <b>サーバーについて。</b>  8 GBのメモリを搭載した10年目から11年目の世代の一般的なサーバー（ほぼ完全に同一で、同じブランドのものでも）。 サーバーはグループに分けられ、さまざまなユーザーアカウントのセットを提供します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <b>アプリケーションについて。</b> 広告サーバー、C \ C ++ロジックを備えたHTTP（libh2o）、多数のサードパーティライブラリ、共有メモリ内の標準C ++コンテナのような自転車など 着信要求を受け入れ、複数のアップストリームサーバーにリダイレクトし、応答のオークションを開催して、クライアントに応答を返します。 すべてがFreeBSD 11.0 \ 11.1を有効にします。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2> 誰のせいですか？ </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     コードベースの最後の変更は約10日前で、最近はメモリに目立った変化はありませんでした。 大まかな分析により、最も可能性の高い理由のリストが得られました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li> 着信/発信リクエストの質的または量的特性が変更され、メモリの割り当て/解放でエラーが発生しました。 </li><li> 共有メモリにコンテナがある自転車。 何かがうまくいかない場合、彼らは常に疑念を引き起こします。 </li><li> リークはなく、データが増えただけで、中断が停止しました。 </li><li>  OS \ライブラリのカーネルを更新した結果。 しかし、デフォルトの自動更新はありません。何らかの種類のWindowsではありません。必要なときにいつでも<a href="https://www.raymond.cc/blog/disable-and-stop-restart-or-reboot-after-installing-windows-update/">更新</a>を<a href="https://www.raymond.cc/blog/disable-and-stop-restart-or-reboot-after-installing-windows-update/">ロールアップし</a> 、さらにマシンを再起動できます。  <i>数ヶ月前、近隣プロジェクトの多くのサービスが崩壊しました。</i> </li><li> 誰かが標的ネットワーク攻撃を実行してオーバーフローを引き起こします。 </li><li> メルトダウン\スペクター。 はい！ もちろんです。 減速を恐れて更新を行ったことは覚えていませんが、今日のそのようなポイントには、緊急事態が発生する場所がなければなりません。 </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     ただし、要求/応答の特性は変更されていません（少なくとも収集されたすべてのメトリックで）。 これ以上データはなく、ネットワークは整然としており、多くの空きリソースがあり、サーバーはすぐに応答します...外部環境は変更されましたか？ 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2> どうする </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     数年前に似たようなものが表面化したが、問題を解決するのに役立つほとんどすべてのツールは忘れられた。 私はほんの数時間でそれを取り除きたかったので、最初の素朴な試みはStackOverflowへの答えを見つけることでした...基本的に、人々はValgrindといくつかの未知の工芸品（明らかに著者自身）、またはVisualStudioのプラグイン（関連なし）をお勧めします。 クラフトはほとんどすべてのものに落ち、適切に動作し始めることさえありませんでした（memleax、ElectricFenceなど）。詳細については説明しません。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     途中で、最近リリースされたすべての機能を思い出します。幸いなことに、先月、主な機能の変更はほとんどありませんでした-GeoIPベースのねじ込みなど、詳細に... 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     クライアントと上位サーバーを1つずつ切断しようとしています（この方法は最初の方法の1つでしたが、何らかの理由で結果が得られず、さまざまな強度の組み合わせでリークが発生し、着信要求への線形依存のみが観察されました）。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     すぐに、2か月前の監査まで、古いバージョンにロールバックする試みが行われました。 そこでメモリがリークし続けました。 他のコンポーネントとの互換性がないため、以前のバージョンにロールバックすることはできませんでした。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     主な質問は、なぜこれらの5つのサーバーですか？ すべてのマシンはほぼ同じです（OSバージョン11 \ 11.1の違いを除く）。 この問題は、特定のアカウントグループでのみ発生します。 他の人にはそのような動作のヒントはありません。つまり、着信要求に正確に依存している必要があります... 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <div class="spoiler">  <b class="spoiler_title">叙情的な余談</b> <div class="spoiler_text"> さまざまなプロジェクトで繰り返しリークに遭遇し、最も一般的で効果的な治療方法-欠陥のあるアプリケーションを定期的に再起動すること-に関する多くの恐ろしい話を偶然聞きました。 はい、はい、これは非常に評判の良い企業で長年働いていることがわかりました。 それは常に私にとって完全なゲームのように思われ、問題がどんなに大きくても、私は自分の人生で決してそれに屈しません。 ただし、すでに2日目に、cronで恥ずべき再起動を登録する必要がありました。 数時間ごとにアプリケーションを再起動するのは、かなり面倒な作業でした（特に夜間）。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    </div></div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     何らかの理由で、私はすべてを美しく行いたい、つまり普遍的な手段でリークポイントを見つけたいと思いました。 おそらく、これは初期段階で犯した主な間違いの1つでした。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     それで、今日説明されている問題を解決するための普遍的な救済策は何ですか？ 基本的に、これらはmalloc \ freeへの呼び出しをラップし、すべてのメモリ操作を監視するサードパーティライブラリです。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h3>  valgrind </h3>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     問題を検出する優れた方法。 実際、ほぼすべてのタイプ（ダブルリリース、境界を越える、リークなど）をキャッチします。 この物語はそれが始まる前に終わっていたでしょう。 しかし、valgrindには1つの問題があります。負荷の高いアプリケーションにはほとんど完全に役に立たないということです。 次のように見えます。プログラムは通常よりも20〜50倍長く起動しますが、それでも動作します。もちろん、ほとんどのリクエストには、タイムアウトしてタイムアウトする時間はありません。  CPUコアは100％でロードされますが、アプリケーションは有用なアクションを実行せず、valgrind仮想マシン上のすべてのリソースを消費します。 ログを見ると、正常に送信されるすべてのリクエストの何パーセントかの悲惨な部分が見つかります。  Ctrlキーを押しながらCキーを押すと、運が良ければ数分でログが表示されるか、すべてが落ちます（多くの場合、2番目のログ、またはほとんど空のログがありました）。 一般的に、それは離陸しませんでした。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h3>  tcmalloc </h3>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     ライブラリはgoogle-perftoolsポートからアクセスできます。  <a href="https://gperftools.github.io/gperftools/heapprofile.html">開発者に</a>よる<a href="https://gperftools.github.io/gperftools/heapprofile.html">と</a> ： <blockquote> これは、Googleで使用するヒーププロファイラーです。 </blockquote> ほとんどのこのようなツールと同様に、環境変数（LD_PRELOAD）を使用するか、ライブラリ自体をコンパイルする（-ltcmalloc）ことにより接続されます。 どちらの方法も機能しませんでした。 プロセスで別のプロセスが発見されました-コードから静的メソッドHeapLeakChecker :: NoGlobalLeaks（）を呼び出します。 しかし、何らかの理由で、どのライブラリバージョンにもエクスポートされませんでした。  <a href="https://github.com/gperftools/gperftools/blob/master/INSTALL">後で判明</a> ： <blockquote>  [FreeBSD上] libtcmalloc.soは正常にビルドされ、「高度な」tcmalloc機能はすべて、Linux固有のコードを持つリークチェッカーを除いてすべて機能します。 </blockquote>  :(さらに進んでいきましょう。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h3> リブメム </h3>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      umemポートから利用可能。 メモリの問題を検出するスマートな方法。 特に<a href="https://blogs.oracle.com/jwadams/debugging-with-libumem-and-mdb">MDB</a>との<a href="https://blogs.oracle.com/jwadams/debugging-with-libumem-and-mdb">組み合わせで</a> 。 残念ながら、これらはすべてSolaris OSでのみ利用可能であり、FreeBSD MDB <a href="https://wiki.freebsd.org/Debugging">に移植</a>することをお勧めします。 アプリケーションを起動できませんでした。 起動時に、mainを呼び出す前に、libthr.soからcallocが呼び出されます。libthr.soはすでにlibumemによってインターセプトされています。 次に、libumemはコード内のスレッドで作業を初期化しようとします。 再帰-s。 一般に、メインコールのかなり前のスタックは次のようになります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/webt/06/8h/8x/068h8xitiui8ugjgrz5-vbtbqve.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     卵と鶏肉の典型的な問題。これはどのように移動するか明確ではありません。 マルチスレッドをカットするというアイデアを延期することにしました（残念ながら、ブーストの依存関係とgetaddrinfoのラッパーでのみ使用しています）。 まあ、誰かが開いた<a href="https://github.com/gburd/libumem/issues/9">同様のチケット</a>で開発者（まだ<a href="https://github.com/gburd/libumem/issues/10">生きている</a>場合）に書き込み、続けます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h3>  dmalloc </h3>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     同じ名前のポートから利用できます。 優れたドキュメントがあります。 起動時のスタックは驚くほど前のケースに似ています： 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre><code class="hljs delphi">(gdb) bt <span class="hljs-string"><span class="hljs-string">#0</span></span> <span class="hljs-number"><span class="hljs-number">0</span></span>x0000000802c8783e <span class="hljs-keyword"><span class="hljs-keyword">in</span></span> dmalloc_malloc () from /usr/<span class="hljs-keyword"><span class="hljs-keyword">local</span></span>/lib/libdmallocthcxx.so.<span class="hljs-number"><span class="hljs-number">1</span></span> <span class="hljs-string"><span class="hljs-string">#1</span></span> <span class="hljs-number"><span class="hljs-number">0</span></span>x0000000802c88623 <span class="hljs-keyword"><span class="hljs-keyword">in</span></span> calloc () from /usr/<span class="hljs-keyword"><span class="hljs-keyword">local</span></span>/lib/libdmallocthcxx.so.<span class="hljs-number"><span class="hljs-number">1</span></span> <span class="hljs-string"><span class="hljs-string">#2</span></span> <span class="hljs-number"><span class="hljs-number">0</span></span>x00000008038a8594 <span class="hljs-keyword"><span class="hljs-keyword">in</span></span> ?? () from /lib/libthr.so.<span class="hljs-number"><span class="hljs-number">3</span></span> <span class="hljs-string"><span class="hljs-string">#3</span></span> <span class="hljs-number"><span class="hljs-number">0</span></span>x00000008038a98d4 <span class="hljs-keyword"><span class="hljs-keyword">in</span></span> ?? () from /lib/libthr.so.<span class="hljs-number"><span class="hljs-number">3</span></span> <span class="hljs-string"><span class="hljs-string">#4</span></span> <span class="hljs-number"><span class="hljs-number">0</span></span>x00000008038a58fa <span class="hljs-keyword"><span class="hljs-keyword">in</span></span> pthread_mutex_lock () from /lib/libthr.so.<span class="hljs-number"><span class="hljs-number">3</span></span> <span class="hljs-string"><span class="hljs-string">#5</span></span> <span class="hljs-number"><span class="hljs-number">0</span></span>x0000000802c87641 <span class="hljs-keyword"><span class="hljs-keyword">in</span></span> ?? () from /usr/<span class="hljs-keyword"><span class="hljs-keyword">local</span></span>/lib/libdmallocthcxx.so.<span class="hljs-number"><span class="hljs-number">1</span></span> <span class="hljs-string"><span class="hljs-string">#6</span></span> <span class="hljs-number"><span class="hljs-number">0</span></span>x0000000802c87bb3 <span class="hljs-keyword"><span class="hljs-keyword">in</span></span> ?? () from /usr/<span class="hljs-keyword"><span class="hljs-keyword">local</span></span>/lib/libdmallocthcxx.so.<span class="hljs-number"><span class="hljs-number">1</span></span> <span class="hljs-string"><span class="hljs-string">#7</span></span> <span class="hljs-number"><span class="hljs-number">0</span></span>x0000000802c8787a <span class="hljs-keyword"><span class="hljs-keyword">in</span></span> dmalloc_malloc () from /usr/<span class="hljs-keyword"><span class="hljs-keyword">local</span></span>/lib/libdmallocthcxx.so.<span class="hljs-number"><span class="hljs-number">1</span></span> <span class="hljs-string"><span class="hljs-string">#8</span></span> <span class="hljs-number"><span class="hljs-number">0</span></span>x0000000802c88623 <span class="hljs-keyword"><span class="hljs-keyword">in</span></span> calloc () from /usr/<span class="hljs-keyword"><span class="hljs-keyword">local</span></span>/lib/libdmallocthcxx.so.<span class="hljs-number"><span class="hljs-number">1</span></span> <span class="hljs-string"><span class="hljs-string">#9</span></span> <span class="hljs-number"><span class="hljs-number">0</span></span>x00000008038a8594 <span class="hljs-keyword"><span class="hljs-keyword">in</span></span> ?? () from /lib/libthr.so.<span class="hljs-number"><span class="hljs-number">3</span></span> <span class="hljs-string"><span class="hljs-string">#10</span></span> <span class="hljs-number"><span class="hljs-number">0</span></span>x00000008038a98d4 <span class="hljs-keyword"><span class="hljs-keyword">in</span></span> ?? () from /lib/libthr.so.<span class="hljs-number"><span class="hljs-number">3</span></span> <span class="hljs-string"><span class="hljs-string">#11</span></span> <span class="hljs-number"><span class="hljs-number">0</span></span>x00000008038a58fa <span class="hljs-keyword"><span class="hljs-keyword">in</span></span> pthread_mutex_lock () from /lib/libthr.so.<span class="hljs-number"><span class="hljs-number">3</span></span> <span class="hljs-string"><span class="hljs-string">#12</span></span> <span class="hljs-number"><span class="hljs-number">0</span></span>x0000000802c87641 <span class="hljs-keyword"><span class="hljs-keyword">in</span></span> ?? () from /usr/<span class="hljs-keyword"><span class="hljs-keyword">local</span></span>/lib/libdmallocthcxx.so.<span class="hljs-number"><span class="hljs-number">1</span></span> <span class="hljs-string"><span class="hljs-string">#13</span></span> <span class="hljs-number"><span class="hljs-number">0</span></span>x0000000802c87bb3 <span class="hljs-keyword"><span class="hljs-keyword">in</span></span> ?? () from /usr/<span class="hljs-keyword"><span class="hljs-keyword">local</span></span>/lib/libdmallocthcxx.so.<span class="hljs-number"><span class="hljs-number">1</span></span> <span class="hljs-string"><span class="hljs-string">#14</span></span> <span class="hljs-number"><span class="hljs-number">0</span></span>x0000000802c8787a <span class="hljs-keyword"><span class="hljs-keyword">in</span></span> dmalloc_malloc ()</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     しかし、ここで著者は<a href="http://dmalloc.com/docs/latest/online/dmalloc_18.html">問題</a>を認識しており、独自の回避策を提供しています：起動時に、無視する必要があるmalloc呼び出しの数を設定します（再帰を回避するため）。 <blockquote> プログラムがすぐにコアダンプする場合は低すぎること、dmallocライブラリが値が低いにもかかわらず再帰的であると言っている場合は高すぎることがわかっているため、いずれかの問題が発生する可能性があります。 </blockquote> いいね コアダンプと再帰の間にタグを付けて大切な数字を拾い、この事業全体を分析することが決定されました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     その間、サーバーのメモリはさらに速く使い果たされ始めました。 完全に食べる5〜6時間前の場合、1時間で完全に記憶が失われます。  cronを微調整する必要がありました（さらに、問題が発生しやすいサーバーのセットが成長し始めました。しかし、新しいサーバーのセットのメモリは24時間以内に使い果たしました。さらに、ほとんどのマシンでは、目に見えるメモリの問題はまったくありませんでした。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     同時に、DCのエンジニアは、「このデータが増えた」という理論をテストするために、サーバーの1つに追加のメモリを要求しました（これがリークではないことを確認する最後の必死の試み）。  DCはすぐに追加の8GBを提供しましたが、これは夜間に安全に食べられました。 リークの存在を疑う人はいませんでした。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h3>  dtrace </h3>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     冷酷なグッグルズの過程で、神秘的なD言語の神秘的なスクリプトがますます登場し始めました。それらはすべて、ほとんどすべてのコードの分析とデバッグにおける<b>IDDQDの</b>一種であるdtraceという非常にクールなシステムユーティリティ用に設計されていることが<b>わかり</b>ました。 私は彼について多くのことを聞きましたが、戦闘には使えませんでした。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     つまり たとえば、malloc \ freeなどの特定のlibc関数へのすべての呼び出しを保存し、プローブを配置し、途中で一般的な統計を収集し、さらに数行のコードで<a href="http://dtrace.org/guide/chp-aggs.html">分布図を作成すること</a>もできます。 たとえば、次のように： 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="bash hljs">sudo dtrace -n <span class="hljs-string"><span class="hljs-string">'pid$target::malloc:entry { @ = quantize(arg0); }'</span></span> -p 15034</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      -実行中のプロセスで割り当てられたブロックの分布を調べることができます（例-pid = 15034）。 数秒の監視でアプリケーションの分布は次のようになります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="hljs mel">value ------------- Distribution ------------- count <span class="hljs-number"><span class="hljs-number">2</span></span> | <span class="hljs-number"><span class="hljs-number">0</span></span> <span class="hljs-number"><span class="hljs-number">4</span></span> | <span class="hljs-number"><span class="hljs-number">1407</span></span> <span class="hljs-number"><span class="hljs-number">8</span></span> | <span class="hljs-number"><span class="hljs-number">455</span></span> <span class="hljs-number"><span class="hljs-number">16</span></span> |@@ <span class="hljs-number"><span class="hljs-number">35592</span></span> <span class="hljs-number"><span class="hljs-number">32</span></span> |@@@@@@@@@@@@@@@@ <span class="hljs-number"><span class="hljs-number">239205</span></span> <span class="hljs-number"><span class="hljs-number">64</span></span> |@@@@@@@ <span class="hljs-number"><span class="hljs-number">112358</span></span> <span class="hljs-number"><span class="hljs-number">128</span></span> |@@@@ <span class="hljs-number"><span class="hljs-number">55813</span></span> <span class="hljs-number"><span class="hljs-number">256</span></span> |@@@@@@ <span class="hljs-number"><span class="hljs-number">91368</span></span> <span class="hljs-number"><span class="hljs-number">512</span></span> |@ <span class="hljs-number"><span class="hljs-number">17204</span></span> <span class="hljs-number"><span class="hljs-number">1024</span></span> |@ <span class="hljs-number"><span class="hljs-number">19751</span></span> <span class="hljs-number"><span class="hljs-number">2048</span></span> |@@ <span class="hljs-number"><span class="hljs-number">33310</span></span> <span class="hljs-number"><span class="hljs-number">4096</span></span> | <span class="hljs-number"><span class="hljs-number">2082</span></span> <span class="hljs-number"><span class="hljs-number">8192</span></span> | <span class="hljs-number"><span class="hljs-number">554</span></span> <span class="hljs-number"><span class="hljs-number">16384</span></span> | <span class="hljs-number"><span class="hljs-number">15</span></span> <span class="hljs-number"><span class="hljs-number">32768</span></span> | <span class="hljs-number"><span class="hljs-number">0</span></span> <span class="hljs-number"><span class="hljs-number">65536</span></span> | <span class="hljs-number"><span class="hljs-number">3960</span></span> <span class="hljs-number"><span class="hljs-number">131072</span></span> | <span class="hljs-number"><span class="hljs-number">0</span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     いいですね 再コンパイルせずに、このすべてをオンザフライで！ 私たちはすべての秘密を解き明かすことに非常に近いところにいなければなりません。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     また、アプリケーションからエクスポートされた関数の統計を収集することもできます！ ただし、コンパイルオプション-O1以上を使用すると、ほとんどの興味深い関数がエクスポートから簡単に消え、コンパイラーはそれらをコードに「インライン化」し、「サンプル」を配置するものがなくなります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      dtraceの謝罪者であるブレンダングレッグは、これらすべての狂気の日々の教師および指導者になりました。 <blockquote> 場合によっては、この[dtrace]は優れたツールではなく、唯一のツールです。 </blockquote> 彼は宣言した。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     必要なものに似たものがありますが、ブレンダンはコメントを残しました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <blockquote>  FreeBSD：DTraceはSolarisと同様に使用できます。 機会があれば、例を共有します。 </blockquote> 今日まで、残念なことに、この事件は彼には起こらなかった。 しかし、実際には、すべてはSolarisと同じであり、sbrkの代わりにmmap \ munmapのみが呼び出されます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     私はD言語の知恵を掘り下げなければなりませんでしたが、たとえば、特に集約された値のキャストなど、多くの分野を打ち負かすことはできませんでした。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     最初に、 <a href="https://blogs.oracle.com/openomics/investigating-memory-leaks-with-dtrace">ここから</a>少しやり直したスクリプトを試すことに<a href="https://blogs.oracle.com/openomics/investigating-memory-leaks-with-dtrace">しました</a> ： 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <div class="spoiler">  <b class="spoiler_title">コード</b> <div class="spoiler_text"><pre> <code class="hljs mel">#!/usr/sbin/dtrace -s <span class="hljs-comment"><span class="hljs-comment">/*#pragma D option quiet*/</span></span> <span class="hljs-comment"><span class="hljs-comment">/*#pragma D option cleanrate=5000hz*/</span></span> pid$1::mmap:entry { self-&gt;addr = arg0; self-&gt;<span class="hljs-keyword"><span class="hljs-keyword">size</span></span> = arg1; } pid$1::mmap:<span class="hljs-keyword"><span class="hljs-keyword">return</span></span> /self-&gt;<span class="hljs-keyword"><span class="hljs-keyword">size</span></span>/ { addresses_mmap[arg1] = <span class="hljs-number"><span class="hljs-number">1</span></span>; printf(<span class="hljs-string"><span class="hljs-string">"&lt;__%i,%Y,mmap(0x%lx,%d)-&gt;0x%lx\n"</span></span>, i++, walltimestamp, self-&gt;addr, self-&gt;<span class="hljs-keyword"><span class="hljs-keyword">size</span></span>, arg1); <span class="hljs-comment"><span class="hljs-comment">/*ustack(2);*/</span></span> printf(<span class="hljs-string"><span class="hljs-string">"__&gt;\n\n"</span></span>); @mem_mmap[arg1] = sum(<span class="hljs-number"><span class="hljs-number">1</span></span>); self-&gt;<span class="hljs-keyword"><span class="hljs-keyword">size</span></span>=<span class="hljs-number"><span class="hljs-number">0</span></span>; } pid$1::munmap:entry /addresses_mmap[arg0]/ { @mem_mmap[arg0] = sum(<span class="hljs-number"><span class="hljs-number">-1</span></span>); printf(<span class="hljs-string"><span class="hljs-string">"&lt;__%i,%Y,munmap(0x%lx,%d)__&gt;\n"</span></span>, i++, walltimestamp, arg0, arg1); } pid$1::malloc:entry { self-&gt;<span class="hljs-keyword"><span class="hljs-keyword">size</span></span> = arg0; } pid$1::malloc:<span class="hljs-keyword"><span class="hljs-keyword">return</span></span> /self-&gt;<span class="hljs-keyword"><span class="hljs-keyword">size</span></span> &gt; <span class="hljs-number"><span class="hljs-number">0</span></span>/ { addresses_malloc[arg1] = <span class="hljs-number"><span class="hljs-number">1</span></span>; <span class="hljs-comment"><span class="hljs-comment">/* printf("&lt;__%i,%Y,malloc(%d)-&gt;0x%lx\n", i++, walltimestamp, self-&gt;size, arg1); ustack(2); printf("__&gt;\n\n"); */</span></span> @mem_malloc[arg1] = sum(<span class="hljs-number"><span class="hljs-number">1</span></span>); self-&gt;<span class="hljs-keyword"><span class="hljs-keyword">size</span></span>=<span class="hljs-number"><span class="hljs-number">0</span></span>; } pid$1::free:entry /addresses_malloc[arg0]/ { @mem_malloc[arg0] = sum(<span class="hljs-number"><span class="hljs-number">-1</span></span>); <span class="hljs-comment"><span class="hljs-comment">/*printf("&lt;__%i,%Y,free(0x%lx)__&gt;\n", i++, walltimestamp, arg0);*/</span></span> } END { printf(<span class="hljs-string"><span class="hljs-string">"== REPORT ==\n\n"</span></span>); printf(<span class="hljs-string"><span class="hljs-string">"== MMAP ==\n\n"</span></span>); printa(<span class="hljs-string"><span class="hljs-string">"0x%x =&gt; %@u\n"</span></span>,@mem_mmap); printf(<span class="hljs-string"><span class="hljs-string">"== MALLOC ==\n\n"</span></span>); printa(<span class="hljs-string"><span class="hljs-string">"0x%x =&gt; %@u\n"</span></span>,@mem_malloc); }</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    </div></div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     それは非常に単純に見えます：malloc \ freeへのすべての呼び出しとそれらの呼び出しの場所を保存します。  mallocでは-アドレスのカウンターを増やし、freeでは-減らします。 次に、受信したログを調べて、リーク（counters&gt; 0のアドレス）を見つけます。 全体的な問題は、1秒あたり約150K mallocsで、ustack（）関数（スタック、つまり呼び出しの場所を保存する）がプロセス全体をその重みで文字通り埋め始めることです（valgrindの場合と同様）。 出力からスタックを削除し、アドレスとカウンターを単純に収集しようとしましたが、その結果、何らかの理由で、多くのカウンターがマイナスに深くなっています（実際には、台無しにされたヒープとダブルリリースですか？）、そして、実際には正のカウンター値を持つアドレスはありませんでした...同時に、dtrace次のような吐き出しエラー： 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="hljs sql">dtrace: 3507 dynamic variable drops <span class="hljs-keyword"><span class="hljs-keyword">with</span></span> non-<span class="hljs-keyword"><span class="hljs-keyword">empty</span></span> dirty <span class="hljs-keyword"><span class="hljs-keyword">list</span></span> dtrace: <span class="hljs-number"><span class="hljs-number">2133</span></span> dynamic <span class="hljs-keyword"><span class="hljs-keyword">variable</span></span> drops dtrace: <span class="hljs-number"><span class="hljs-number">120</span></span> dynamic <span class="hljs-keyword"><span class="hljs-keyword">variable</span></span> drops <span class="hljs-keyword"><span class="hljs-keyword">with</span></span> non-<span class="hljs-keyword"><span class="hljs-keyword">empty</span></span> dirty <span class="hljs-keyword"><span class="hljs-keyword">list</span></span> dtrace: <span class="hljs-number"><span class="hljs-number">993</span></span> dynamic <span class="hljs-keyword"><span class="hljs-keyword">variable</span></span> drops dtrace: <span class="hljs-number"><span class="hljs-number">176</span></span> dynamic <span class="hljs-keyword"><span class="hljs-keyword">variable</span></span> drops <span class="hljs-keyword"><span class="hljs-keyword">with</span></span> non-<span class="hljs-keyword"><span class="hljs-keyword">empty</span></span> dirty <span class="hljs-keyword"><span class="hljs-keyword">list</span></span> dtrace: <span class="hljs-number"><span class="hljs-number">1617</span></span> dynamic <span class="hljs-keyword"><span class="hljs-keyword">variable</span></span> drops dtrace: <span class="hljs-number"><span class="hljs-number">539</span></span> dynamic <span class="hljs-keyword"><span class="hljs-keyword">variable</span></span> drops <span class="hljs-keyword"><span class="hljs-keyword">with</span></span> non-<span class="hljs-keyword"><span class="hljs-keyword">empty</span></span> dirty <span class="hljs-keyword"><span class="hljs-keyword">list</span></span> dtrace: <span class="hljs-number"><span class="hljs-number">10252</span></span> dynamic <span class="hljs-keyword"><span class="hljs-keyword">variable</span></span> drops dtrace: <span class="hljs-number"><span class="hljs-number">3830</span></span> dynamic <span class="hljs-keyword"><span class="hljs-keyword">variable</span></span> drops <span class="hljs-keyword"><span class="hljs-keyword">with</span></span> non-<span class="hljs-keyword"><span class="hljs-keyword">empty</span></span> dirty <span class="hljs-keyword"><span class="hljs-keyword">list</span></span> dtrace: <span class="hljs-number"><span class="hljs-number">17048</span></span> dynamic <span class="hljs-keyword"><span class="hljs-keyword">variable</span></span> drops dtrace: <span class="hljs-number"><span class="hljs-number">39483</span></span> dynamic <span class="hljs-keyword"><span class="hljs-keyword">variable</span></span> drops dtrace: <span class="hljs-number"><span class="hljs-number">1121</span></span> dynamic <span class="hljs-keyword"><span class="hljs-keyword">variable</span></span> drops <span class="hljs-keyword"><span class="hljs-keyword">with</span></span> non-<span class="hljs-keyword"><span class="hljs-keyword">empty</span></span> dirty <span class="hljs-keyword"><span class="hljs-keyword">list</span></span> dtrace: <span class="hljs-number"><span class="hljs-number">35067</span></span> dynamic <span class="hljs-keyword"><span class="hljs-keyword">variable</span></span> drops dtrace: <span class="hljs-number"><span class="hljs-number">32592</span></span> dynamic <span class="hljs-keyword"><span class="hljs-keyword">variable</span></span> drops dtrace: <span class="hljs-number"><span class="hljs-number">10081</span></span> dynamic <span class="hljs-keyword"><span class="hljs-keyword">variable</span></span> drops <span class="hljs-keyword"><span class="hljs-keyword">with</span></span> non-<span class="hljs-keyword"><span class="hljs-keyword">empty</span></span> dirty <span class="hljs-keyword"><span class="hljs-keyword">list</span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     また、スタック上の壊れたアドレスに関するメッセージがちらつくことがよくありました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     これは、すべてのイベントを正しく処理する時間がなかったため、カウンターがマイナスになっていることを示唆しています...または、これはヒープ/スタックの問題です。 さらに、mallocsの1.5倍の無料の呼び出しがありました（つまり、ダブルリリースですか？）。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     私は<a href="http://dtrace.org/blogs/mailing-list/">dtraceメーリングリストに助け</a>を求めることにしました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/webt/09/wj/nv/09wjnv4arq-_sn2iw66qmptg77i.jpeg">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     アーカイブから判断すると、かつて忙しかったニュースレターはつらい時期を迎えていました。 驚いたことに、最初の数分で答えが出ましたが、2人の参加者しか反応しませんでした。 保存するスタックフレームの数を指定する引数ustack（nframes）を使用することをお勧めします。 これは助けにならず、ustack（1）でさえプロセス全体を強制終了しました。 また、libumemを使用するようにアドバイスされました（おそらく、Solarisでクロールしたと思われます）。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     その後、次のような非体系的な試みが行われました。mallocsによって割り当てられたサイズに関する統計を収集し、センサーの頻度を何らかの方法で減らすために、特定のサイズのみをフィルターで除外しようとしました。 無駄に、ustack（）は、1秒あたり最大100コールなど、最も最小の負荷向けに設計されているように感じられます。 または、リクエストごとにスタックをスピンさせずに、結果を無限の内部バッファに保存して、正しくクックできるようにする必要があります。 しかし、残念ながら、これには至りませんでした。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     私は反対側からタスクにアプローチしようとしました-コード内のすべてのオブジェクトのデザイナとデストラクタの呼び出しをカウントするために、実際にスタックを保存する必要はありません。 これも結果を生み出しませんでした。 矛盾は明らかになりませんでしたが、もちろん、コード内のすべてのオブジェクトを「テスト」するのは面倒で、疑わしいものに限定しました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <div class="spoiler">  <b class="spoiler_title">デマングルについて</b> <div class="spoiler_text"> 関数の呼び出しでセンサーをインストールするには、いわゆる 名前のデマングル。 ここでは、あたかも悪であるかのように、FreeBSDは別の<a href="https://bugs.freebsd.org/bugzilla/show_bug.cgi%3Fid%3D223333">驚きを</a>投げかけまし<a href="https://bugs.freebsd.org/bugzilla/show_bug.cgi%3Fid%3D223333">た</a> 。 シンプル： 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="bash hljs"><span class="hljs-built_in"><span class="hljs-built_in">echo</span></span> _ZZN7simlib318SIMLIB_create_nameEPKczE1s | /usr/bin/c++filt</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     ユーティリティをクラッシュさせます。 このバグは11.1ではまだ修正されていません。 バージョン11.0のサーバーの1つでデマングル処理を実行する必要がありました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    </div></div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     すべてが風車との戦いに似始めました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     一般的に、dtraceの出力は、リークではなく、破損したヒープ/ダブルリリースであると主張しました。 これが本当なら、特別なものなしで、すべてが非常に悪いです。 ライブラリは十分ではありません。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     しかし、これはすべて完全なナンセンスであることが判明し、数日間だけ標的から側に逃げました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h3>  jemalloc </h3>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      FreeBSD自体が非常にクールで高度なメモリマネージャを使用していることは注目に値します。 むしろ、私はそれを完全に忘れていました... <a href="http://jemalloc.net/jemalloc.3.html">設定とオプションの</a>数によって、他のすべてのラッパーライブラリは近くにさえありませんでした。 ドックをいじくり回した後、私はオプションでアプリケーションを起動することができました： 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="bash hljs">setenv MALLOC_CONF utrace:<span class="hljs-literal"><span class="hljs-literal">true</span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     次に、 <a href="https://keramida.wordpress.com/2008/10/15/extracting-useful-info-from-freebsd-malloc-tracing/">ここから</a>の指示に従って、すべてのメモリ操作のログを収集（ktrace）および生成（kdump）します。 その中には記事のスクリプトでは機能しなかったreallocがあり、コメントからのスクリプトの<a href="http://people.freebsd.org/~keramida/alloctrace-2.py.txt">2番目のバージョン</a> （reallocを正しく処理する）は存在しないページにつながりました（そしてWayback Machineでも何も見つかりませんでした）。  reallocsのサポートを追加する必要がありましたが、実際には、リークが発生している可能性のある場所に大量のポインタを提供するだけで、どこに誰が割り当てられているかについてのヒントはありませんでした。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <blockquote> 近くのトレース出力をざっと調べることで、ソースのリークの場所についてもう少し理解できるかもしれません:-) </blockquote>  -記事の著者を冗談を言った。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     他のjemallocオプションが機能するためには（たとえば、二重解放の検出、配列からの脱出、メモリへのアクセスに関する拡張統計など）、コア全体が余分に必要です。 オプション、または現在のOSアセンブリ（人間から理解できたもの）。 しかし、それは検索の6日目であり、jemallocのさらなる掘り下げは中断されることになりましたが、このトピックは非常に興味深いものであり、私はそれに戻りたいと思います（同様の状況ではないことを望みます）。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h3> 最終的にリークの発見に役立ったもの </h3>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     各モジュールとアプリケーションサブシステム、およびそれらの組み合わせを順番に無効にします。 私は最初からこの方法で行っていましたが、問題は1日以内に解決しましたが、見逃してはならない新しい興味深いものがいくつありました！ 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     すべての悲しい物語には、肯定的な側面がなければなりません。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h3> ポジティブのノート </h3>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li> 針を検索する過程で、多くの小さな（そしてそうではない）バグ、主にメモリ割り当てが修正されました。 </li><li>  ARC ZFSを削除しました（ディスクに何も書き込まず、メモリのみを消費し、 <a href="https://forums.freebsd.org/threads/freebsd-11-1-zfs-using-to-much-wired-memory.64702/">非常に重要な</a> HTTPサーバーで必要な理由）。 </li><li>  C ++の世界からの仮想デストラクタおよびその他のトリッキーなピースに関する記事が研究されました。 </li><li>  Dで多数のスクリプトを使用して作成された、数え切れないほどのチュートリアルが（dtraceによって）表示されています。 </li><li>  malloc \ freeのさまざまな実装に没頭し、アリーナとスラブの概念に精通している。 </li><li> プロジェクトで使用されているすべてのサードパーティライブラリのメモリに関連する既知のバグをすべて調査しました。 </li><li>  Solaris OSが存在する最後の年に展開した歴史とドラマを学びました。 </li><li>  GDBスキルのアップグレード/復元。 </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h3> 完全な絶望の瞬間に陥るべきでない狂気 </h3>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li> すべてを送ってLinuxに移行します。 この考えは、完全なGoogle Chrome、Skype、または<a href="https://habrahabr.ru/company/odnoklassniki/blog/266005/">クールな自作システムユーティリティ</a>の不足が原因で、FreeBSDの熱心なサポーターを繰り返し訪れていると思い<a href="https://habrahabr.ru/company/odnoklassniki/blog/266005/">ます</a> 。 パニックに陥らないでください。遅かれ早かれすべての問題が解決され、お気に入りのOSに再び戻ります。 </li><li>  hex-viewerをスワップパーティションにクロールしようとします（メモリからプッシュされているものを確認し、リークの場所を推測しようとします）。 </li><li> アプリケーションからすべてのマルチスレッドを削除して、ほとんどの資金がより高く稼がれるようにしました。 </li><li> プロのフリーランサーを雇って、すべてをすばやく修正します。 </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2> 結論 </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li> リリースのすべての変更を徹底的に記録します。 ほとんどすべての場合、リークは最新のコミットの1つに関連付けられます。 あなたが非常に不運なら、最後の数ヶ月にわたってコミットしてください。 すべての変更を一度に1つずつロールバックし、組み合わせて、すべての変更を数回再確認してください。 わずかな間違い-そして、あなたは間違った方向に数日間/数週間連れ去られます。 </li><li> 時間が貴重な場合-特に高負荷のプロジェクトでは、汎用リーク検出ツールを使用しないでください。 </li><li>  dtraceの巧妙さは十分ではなく、すべてのリクエストのごく一部しか処理できませんでした。 ただし、ここでの事後処理では、誤検出などを正しく除外する必要があります。 残念ながら、このアプローチを習得するのに十分な時間とエネルギーがありませんでした。 </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     この物語の終わりは大きな運だと思います。 漏れが検索全体で安定して再現されたことは幸運でした。 リリースサーバーの1つで再構築されたアプリケーションを、ユーザーに大きな損害を与えることなく必要な回数だけ再起動する機会があったこと。 バグがリリースされてから問題が発生するまでに、問題を見つける可能性がゼロになると半年ではなく、わずか数日しかかかりませんでした... 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2> 質疑応答 </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <b>結局のところ、漏れの原因は何だったのでしょうか？</b> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     前述のように、サーバーは上位サーバーの応答間でオークションを開催します。 回答が最大値を超える場合、それらは「クリッピング」されます（上位N個の結果が取得されます）。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     上部はstd :: listに格納されます。ここで、要素はbidオブジェクトへのポインターです。 コミットの1つで、トップをトリミングするためのすばらしいコードlist.resize（max_results）が導入されました。 ご想像のとおり、list.resizeはポインター要素でdeleteを呼び出しません。  resizeを呼び出す前に、ハンドルを使用してすべての余分なポインターのメモリを解放する必要があります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <b>バグバージョンのリリース後、なぜそんなに長い間リークが感じられなかったのですか？</b> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     サーバーの応答は常に上位Nの結果になり、何も切り捨てられませんでした。 ある時点で特定のユーザーがより多くの回答を持ち、トップとの干渉をやめたということです。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <b>以前のバージョンにロールバックしなかったため、問題をすぐに特定できなかったのはなぜですか？</b> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     ここで演じられたのはヒューマンファクターです。 実際には、アプリケーションは開始時にメモリを積極的に消費し始め、数時間強度を低下させます。 恐らく、検索の最中に、これは継続的なリークとして認識され、問題箇所を特定できませんでした。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <b>サーバーの特定の部分でのみ問題が発生したのはなぜですか？</b> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     このサーバーグループでサービスを提供するアカウントのため。 オークションに参加した一部の企業は、上位に収まらない大量の入札を返し始めました。 他のサーバーが提供する他のアカウントについては、すべての応答がトップオークションに含まれていたか、最大値を超えることはほとんどありませんでした。 リストサイズ。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     特にJavaで、リークに対処するストーリーを教えてください。  「N分ごとにアプリケーションを再起動する」方法は、普遍的なソリューションとして非常に人気がありますか？  Linuxや「tcmalloc and co」ではとても悲しいのですか。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <b>UPD1</b> ：このテキストの準備中に、 <a href="https://clang.llvm.org/docs/LeakSanitizer.html">clangを使用してリークを検出できる可能性</a>に偶然<b>出くわし</b>ました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     最後まで読んでくれたみんなに感謝します！ </div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+<section class="more-articles-navigation-panel js-more-articles-navigation-panel">
+<h4>More articles:</h4>
+<nav class="list-of-articles-container js-list-of-articles-container"><ul class="list-of-pages js-list-of-pages">
+<li><a href="../J354354/index.html">2018年5月のIT分野のHR専門家向けイベントのダイジェスト</a></li>
+<li><a href="../J354356/index.html">マーヴィンミンスキーの「エモーションマシン」：第1章「リソースのクラウドとしてのマインドの紹介」</a></li>
+<li><a href="../J354362/index.html">ハイブリッドクラウド環境でアプリケーションを管理するための新しいチップ、またはCitrix NetScaler MAS 12.0でできること</a></li>
+<li><a href="../J354364/index.html">Laravelのキューイング</a></li>
+<li><a href="../J354366/index.html">TON：Telegram Open Network。 パート1：イントロ、ネットワーク層、ADNL、DHT、オーバーレイネットワーク</a></li>
+<li><a href="../J354374/index.html">WebアプリケーションレベルのDDoS保護</a></li>
+<li><a href="../J354376/index.html">クラウドに移行する必要のない人とその理由</a></li>
+<li><a href="../J354378/index.html">製品チームでグルーミングをバックログする理由と方法は？</a></li>
+<li><a href="../J354380/index.html">設計システムに関する書籍</a></li>
+<li><a href="../J354384/index.html">BGPを使用したAmazon DNSサービスの傍受により、MyEtherWalletに対する攻撃が行われました</a></li>
+</ul></nav>
+</section><br />
+<a href="../../allArticles.html"><strong>All Articles</strong></a>
+<script src="../../js/main.js"></script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript" >
+  (function (d, w, c) {
+      (w[c] = w[c] || []).push(function() {
+          try {
+              w.yaCounter70218013 = new Ya.Metrika({
+                  id:70218013,
+                  clickmap:true,
+                  trackLinks:true,
+                  accurateTrackBounce:true,
+                  webvisor:true
+              });
+          } catch(e) { }
+      });
+
+      var n = d.getElementsByTagName("script")[0],
+          s = d.createElement("script"),
+          f = function () { n.parentNode.insertBefore(s, n); };
+      s.type = "text/javascript";
+      s.async = true;
+      s.src = "https://mc.yandex.ru/metrika/watch.js";
+
+      if (w.opera == "[object Opera]") {
+          d.addEventListener("DOMContentLoaded", f, false);
+      } else { f(); }
+  })(document, window, "yandex_metrika_callbacks");
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/70218013" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+
+<!-- Google Analytics -->
+  <script>
+    window.ga = function () { ga.q.push(arguments) }; ga.q = []; ga.l = +new Date;
+    ga('create', 'G-FEDBM7F51Q', 'auto'); ga('send', 'pageview')
+  </script>
+  <script src="https://www.google-analytics.com/analytics.js" async defer></script>
+
+</section>
+
+<footer class="page-footer">
+  <div class="page-footer-legal-info-container page-footer-element">
+    <p>
+      Clever Geek | <span class="page-footer-legal-info-year js-page-footer-legal-info-year">2020</span>
+    </p>
+  </div>
+  <div class="page-footer-counters-container page-footer-element">
+    <div class="company-info js-company-info" itemscope="" itemtype="http://schema.org/Organization">
+      <span itemprop="name">Western Town Media (WTM)</span>
+      <div itemprop="address" itemscope="" itemtype="http://schema.org/PostalAddress">
+        <span itemprop="streetAddress">1968 Stoney Lonesome Road</span>
+        <br>
+        <span itemprop="postalCode">PA 18640</span>
+        <span itemprop="addressLocality">Pittston, USA</span>
+      </div>
+      <span itemprop="telephone">570-362-1316</span>
+    </div>
+    <script type="application/ld+json">
+      {
+        "@context": "http://schema.org",
+        "@type": "Organization",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Pittston, USA",
+          "postalCode": "PA 18640",
+          "streetAddress": "1968 Stoney Lonesome Road"
+        },
+        "name": "Western Town Media (WTM)",
+        "telephone": "570-362-1316"
+      }
+    </script>
+  </div>
+</footer>
+  
+</body>
+
+</html>
