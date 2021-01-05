@@ -1,0 +1,1116 @@
+<!doctype html>
+<html class="no-js" lang="en">
+
+<head>
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-FEDBM7F51Q"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-FEDBM7F51Q');
+  </script>
+
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <title>⛎ 🏽 🧑🏻 例としてMicrosoft Edgeを使用する任意のコードガード（ACG）メカニズム 🕵🏽 🔬 🐫</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <meta name="description" content="免責事項 
+
+- この出版物は、Ivan Fratric（Google Project Zero） によるドキュメント「Microsoft EdgeでJITサーバーを攻撃することによる緩和策の回避」の一部の翻訳です。 ACGメカニズムとMicrosoft Edgeブラウザーでのそのアプリケーションを...">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml"/>
+
+  <link rel="stylesheet" href="../../css/main.css">
+
+  <link href="https://fonts.googleapis.com/css?family=Quicksand&display=swap" rel="stylesheet">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+  <script>document.write('<script src="https://pagea' + 'd2.googles' + 'yndication.com/pagea' + 'd/js/a' + 'dsby' + 'google.js"><\/script>')</script>
+  <script>
+        var superSpecialObject = {};
+        superSpecialObject['google_a' + 'd_client'] = 'ca-p' + 'ub-6974184241884155';
+        superSpecialObject['enable_page_level_a' + 'ds'] = true;
+       (window['a' + 'dsbygoogle'] = window['a' + 'dsbygoogle'] || []).push(superSpecialObject);
+  </script>
+</head>
+
+<body>
+  <!--[if lte IE 9]>
+    <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience and security.</p>
+  <![endif]-->
+  <header class="page-header js-page-header">
+    <a class="page-header-logo-container" href="https://tech-in-japan.github.io/index.html"></a>
+    <div class="page-header-text">Clever Geek Handbook</div>
+  </header>
+  <section class="page js-page"><h1>例としてMicrosoft Edgeを使用する任意のコードガード（ACG）メカニズム</h1><div class="post__text post__text-html js-mediator-article" id="post-content-body" data-io-article-url="https://habr.com/ru/post/358650/"><div class="spoiler">  <b class="spoiler_title">免責事項</b> <div class="spoiler_text"><ul><li> この出版物は、Ivan Fratric（Google Project Zero） <a href="https://github.com/google/p0tools/raw/master/JITServer/JIT-Server-whitepaper.pdf">による</a>ドキュメント<a href="https://github.com/google/p0tools/raw/master/JITServer/JIT-Server-whitepaper.pdf">「Microsoft EdgeでJITサーバーを攻撃することによる緩和策の</a>回避<a href="https://github.com/google/p0tools/raw/master/JITServer/JIT-Server-whitepaper.pdf">」</a>の一部の翻訳です。  ACGメカニズムとMicrosoft Edgeブラウザーでのそのアプリケーションを説明する部分は翻訳されています。 この翻訳以外では、Chakra（Microsoft Edge JavaScript Engine）のJITの内部の詳細な説明とその攻撃ベクトル（発見された脆弱性の説明、ドキュメントの公開時に修正）が残りました。 </li><li> 私の職業活動の性質上、私はテクニカルライターでもありませんし、（さらに）翻訳者でもありません。 しかし、ドキュメントの内容は、Windowsの内部を研究するという点で非常に興味深いように思えました。 したがって、翻訳を改善するための建設的なコメントと提案を受け付けています。 </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    </div></div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Windows 10 Creators Updateのリリースにより、MicrosoftはMicrosoft Edgeの新しいセキュリティメカニズムである<a href="https://blogs.windows.com/msedgedev/2017/02/23/mitigating-arbitrary-native-code-execution/">Arbitrary Code Guard（ACG）の</a>使用を開始しました。  ACGをプロセス（特に、Microsoft Edgeプロセス）に適用すると、ターゲットプロセスで新しい実行可能メモリを割り当てたり、既存の実行可能メモリを変更したりすることができなくなります。 したがって、攻撃者にとっての任意のコードの実行はより困難になります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     パフォーマンスを向上させるために、最新のブラウザーはJavaScriptコードのJIT（Just-In-Time）コンパイルを使用しますが、このアプローチはACGと互換性がありません。 そのため、Microsoft Edgeには次のアプローチが実装されました。JITは、コンテンツプロセス（コンテンツプロセス）に関連する個別のプロセスに分離されました。 コンテンツプロセスはJavaScriptバイトコードをJITプロセスに送信し、JITプロセスはそれをマシンコードにコンパイルし、そのマシンコードをコンテンツプロセスに投影します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <a name="habracut"></a>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2>  Microsoft EdgeでのACGの機能 </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      ACGは、動的プロセスコードポリシーの設定に依存します。 このポリシーは、ProcessDynamicCodePolicyパラメーターを指定して<a href="https://msdn.microsoft.com/en-us/library/windows/desktop/hh769088(v%3Dvs.85).aspx">SetProcessMitigationPolicy</a>関数を呼び出すことにより、任意のWindowsプロセスに設定できます。  Microsoft Edgeコンテンツプロセスでは、呼び出しは次のとおりです。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre><code class="hljs erlang-repl"><span class="hljs-number"><span class="hljs-number">00</span></span> KERNELBASE!SetProcessMitigationPolicy <span class="hljs-number"><span class="hljs-number">01</span></span> MicrosoftEdgeCP!SetProcessDynamicCodePolicy+<span class="hljs-number"><span class="hljs-number">0</span></span>xc0 <span class="hljs-number"><span class="hljs-number">02</span></span> MicrosoftEdgeCP!StartContentProcess_Exe+<span class="hljs-number"><span class="hljs-number">0</span></span>x164 <span class="hljs-number"><span class="hljs-number">03</span></span> MicrosoftEdgeCP!main+<span class="hljs-number"><span class="hljs-number">0</span></span>xfe <span class="hljs-number"><span class="hljs-number">04</span></span> MicrosoftEdgeCP!_main+<span class="hljs-number"><span class="hljs-number">0</span></span>xa6 <span class="hljs-number"><span class="hljs-number">05</span></span> MicrosoftEdgeCP!WinMainCRTStartup+<span class="hljs-number"><span class="hljs-number">0</span></span>x1b3 <span class="hljs-number"><span class="hljs-number">06</span></span> KERNEL32!BaseThreadInitThunk+<span class="hljs-number"><span class="hljs-number">0</span></span>x14 <span class="hljs-number"><span class="hljs-number">07</span></span> ntdll!RtlUserThreadStart+<span class="hljs-number"><span class="hljs-number">0</span></span>x21</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     各Microsoft Edgeコンテンツプロセスは、作成後すぐにこの関数を呼び出します。 残念ながら、1つのコンテンツプロセスが同じサンドボックス（ <a href="https://msdn.microsoft.com/en-us/library/windows/desktop/mt595898(v%3Dvs.85).aspx">App Container</a> ）で実行される他のコンテンツプロセスにアクセスできるため、コンテンツプロセスAはBがACGをアクティブにする前にコンテンツプロセスBにアクセスできます。 これにより、攻撃者はプロセスBでACGメカニズムがアクティブにならないことを確認できます（または、ACGメカニズムがアクティブになるまでプロセスBで任意のコードを実行するだけです）。 これ<a href="https://bugs.chromium.org/p/project-zero/issues/detail%3Fid%3D1552">は</a>公開時点で<b>修正さ</b>れて<b>いない</b> <a href="https://bugs.chromium.org/p/project-zero/issues/detail%3Fid%3D1552">アーキテクチャの問題</a>であり、Windowsの将来のバージョンで解決される予定です。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     動的コードポリシーは、Microsoft Edgeコンテンツプロセスによって常に設定されるとは限りません。 このポリシーの適用を決定する前に、プロセスは次の図に示すように、いくつかのレジストリエントリにアクセスします。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/webt/jo/sh/ws/joshwshspszusatcfmwehliwkpa.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     幸い、Microsoft Edgeコンテンツプロセスにはこれらのレジストリキーへの書き込みアクセス権がないため、侵害されたコンテンツプロセスは、将来作成されるプロセスのACGを単純に無効にすることはできません。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     さらに、後方互換性を確保するために、Edgeは動的コードポリシー値を設定する前に、ACGと互換性のないドライバー（グラフィックスなど）が存在するかどうかを判断しようとします。  ACGに関する<a href="https://blogs.windows.com/msedgedev/2017/02/23/mitigating-arbitrary-native-code-execution/">Microsoftブログ投稿</a> ： 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <blockquote> 互換性の理由から、ACGは現在、メインGPUがWDDM 2.2ドライバー（Windows 10 Anniversary Updateでリリースされたドライバーモデル）を実行している64ビットマシン、またはソフトウェアレンダリングを使用する場合にのみ使用されます。 実験目的のために、[コントロールパネル]-&gt; [インターネットオプション]-&gt; [詳細]を使用して、ソフトウェアレンダリングを強制的に有効にすることができます。 現在、Microsoftデバイス（Surface Book、Surface Pro 4、Surface Studio）およびGPUドライバーがACGと完全に互換性のある他のいくつかのシステムはACGを使用しています。 テレメトリと顧客レビューを評価する際に、サポートされるGPUのリストの範囲と精度を改善する予定です。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    </blockquote>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     つまり、古いGPUドライバーを搭載した多くのシステムでは、コンピューターがWindowsの更新バージョンを実行している場合でも、ACGメカニズムは有効になりません。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     プロセスで動的コードポリシーが有効になっていることを確認するには、次の図に示すように、PowerShellスクリプト<a href="https://docs.microsoft.com/en-us/powershell/module/processmitigations/get-processmitigation%3Fview%3Dwin10-ps">Get-ProcessMitigationを</a>呼び出します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/webt/q4/0v/gs/q40vgsihxya2b3lxr7tdr-slyle.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     特に注目すべきは、エントリ「AllowThreadOptOut：OFF」です。  Windowsの以前のバージョンでは、このオプションは「オン」であり、ACGの下から終了できました。 これは、予想どおり、メカニズムが非常に非効率的であるという事実につながりました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Microsoft EdgeコンテンツプロセスはSetProcessMitigationPolicy（）を呼び出すときに、AllowRemoteDowngradeフラグも設定します。これにより、非AppContainerプロセスはいつでもポリシーを無効にできます。 これは、ディスプレイドライバーが変更されたときに使用されます。 コンテンツプロセス自体から動的コードポリシーを無効にしようとすると、包含後に<b>ERROR_ACCESS_DENIED</b>エラーが発生します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     前述のように、動的コードポリシーが有効になっている場合、それは不可能になります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ol><li> 新しい実行可能メモリを割り当てます </li><li> 既存の実行可能メモリを変更する </li></ol>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     つまり、引数flProtect / flNewProtectのフラグが実行可能メモリに関連している場合、 <a href="https://msdn.microsoft.com/en-us/library/windows/desktop/aa366887(v%3Dvs.85).aspx">VirtualAlloc</a>および<a href="https://msdn.microsoft.com/en-us/library/windows/desktop/aa366898(v%3Dvs.85).aspx">VirtualProtect</a>関数の呼び出しは失敗します。 これは、MapViewOfFileなど、同様の効果を引き起こす可能性のあるすべての関数に適用されます。  ACGが原因で関数が失敗すると、新しいエラーコード0xc0000604、STATUS_DYNAMIC_CODE_BLOCKEDが返されます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     プロセスAがプロセスBで実行可能メモリを割り当てようとすると、プロセスAのポリシーのみが重要になります。つまり、プロセスBで動的コードポリシーが設定されている場合（ACGメカニズムが有効）、プロセスAではそうではない場合、プロセスAからの呼び出しは成功しますプロセスAが適切な権限を持つプロセスBへのハンドルを持っている場合。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     したがって、ACGメカニズムを有効にしたプロセスで実行可能メモリを割り当てる唯一の方法は次のとおりです。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ol><li>  ACGメカニズムが無効になっている別のプロセスによる実行可能メモリの割り当て </li><li> プロセスへのdllのロード </li></ol>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      2番目の状況を処理するために、Microsoftは別のメカニズム-CIG（ <a href="https://blogs.windows.com/msedgedev/2017/02/23/mitigating-arbitrary-native-code-execution/">Code Integrity Guard</a> ）を提供しています。  CIGメカニズムを有効にすると、プロセスはMicrosoft署名付きDLLファイルのみをロードできます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2>  ACGはどれくらい効果的ですか？ </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     実行可能メモリを割り当てることができない状況で、サイバー犯罪者が使用するいくつかのアプローチがあります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ol><li> 攻撃者が現在のプロセスを終了する必要がない場合、データのみの攻撃を実行できます（実行不可能なメモリのみを使用します）。 ブラウザーの場合、これは対応するフィールドを上書きしてポリシーチェックを無効またはトリックすることを意味します。これはユニバーサルXSS攻撃に相当します（注：サイト分離を有効にしたGoogle Chromeでは、このような攻撃の実装は非常に複雑です）。 </li><li> そうでない場合、攻撃者がスクリプトを利用できない場合、唯一の方法はROPなどの既存のコードを再利用することです。 攻撃者がROPを使用してペイロードメモリ領域を実行可能にし、そこに制御を移すことだけができないことは注目に値します（今日のエクスプロイトでよく行われます）。 代わりに、すべてのペイロードをROPに書き込む必要があります。 これは現在、時間のかかるタスクですが、ACGの大規模な使用は、このタスクを容易にする自動化ツールの開発に対するインセンティブを提供する可能性があります。 </li><li> スクリプト実行環境が存在する場合、攻撃者は3番目の（より単純な）アプローチを使用します。  ROPにペイロードを書き込む代わりに、読み取りおよび書き込みプリミティブを持つ攻撃者は、このプロセスに既に存在するスクリプトランタイム（たとえば、EdgeのJavaScript）を使用できます。 これにより、以下を許可するインターフェースが作成されます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li> スクリプトランタイムから任意の引数を使用して任意のネイティブ関数を呼び出す </li><li> 戻り値をスクリプトランタイムに戻す </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     このような機能を備えたエクスプロイトライブラリを使用すると、攻撃者はネイティブコードでペイロードを記述する代わりに、必要に応じてネイティブコール用のライブラリを使用して、スクリプト言語でコードを記述します。 メンテナンスライブラリがmalloc（）、memcpy（）などの補助メソッドを提供する場合、タスクは大幅に簡素化されます。 実際、そのようなライブラリー<a href="https://github.com/theori-io/pwnjs">pwn.jsは</a>既に存在します<a href="https://github.com/theori-io/pwnjs">。</a> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     攻撃者は、任意のネイティブ関数を呼び出すことができる代わりに、任意のシステムコール（syscalls）を実行できる可能性があります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    </li></ol>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     上記から、特にWebブラウザではACGはあまり役に立たないように思えるかもしれませんが、シナリオ2および3は、制御フローをキャプチャできる攻撃者を想定していることを考慮する必要があります。 つまり、攻撃者はCFG（Control Flow Guard）をバイパスする必要があります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     現在、 <a href="https://github.com/Microsoft/MSRC-Security-Research/blob/master/presentations/2018_02_OffensiveCon/The%2520Evolution%2520of%2520CFI%2520Attacks%2520and%2520Defenses.pdf">多数のよく知られたアプローチ</a>により、WindowsのCFGバイパスは難しくありません。 ただし、Microsoftがすべての既知のCFGの欠陥を修正できる場合（およびMicrosoftが既にこれを行う意向を示している場合）、今後数年で状況が変わる可能性があります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     したがって、ACGの使用の成功は、CFGおよびCIG（ <a href="https://blogs.windows.com/msedgedev/2017/02/23/mitigating-arbitrary-native-code-execution/">コード整合性ガード</a> ）の使用の成功に直接依存します。 これらのメカニズムはすべて、悪意のあるコードの実行を防ぐために連携する必要があります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li>  CIGとACGを使用する場合、上記のようにCFGを使用しない場合、攻撃者はペイロードをROPチェーンとしてエンコードしたり、スクリプトランタイムを悪用して任意のコードを実行したりできます。 </li><li>  CFGとCIGを使用しますが、ACGがない場合、攻撃者は実行可能メモリを現在のプロセスに投影できます。 </li><li>  CFGとACGを使用しますが、CIGを使用しない場合、攻撃者は悪意のあるライブラリを現在のプロセスに読み込むことができます。 </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2> チャクラ（JITサーバー） </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      ACGメカニズムを有効にしてChakra（Microsoft EdgeのJavaScriptエンジン）にJITを実装するために、Microsoftは、JITサーバーという別のプロセスでコードをコンパイルする責任があるChakraの部分を実行します。 コンテンツプロセスとJITサーバー間の主な相互作用を次の図に示します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/webt/bu/tw/hs/butwhsc-zfhek0e8qzihpkc-_8y.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     このアーキテクチャでは、コンテンツプロセスは、JavaScriptのコンパイル（JIT）を除く、JavaScriptの実行に関連するすべてのタスクを処理します。  JavaScript関数（またはループ）をネイティブコードにコンパイルする必要があるとChakraが判断すると（通常、これはスクリプトの同じ部分を数回解釈した後に発生します）、現在のプロセスでこれを行う代わりに、JITサーバーが呼び出され、これが渡されますターゲット関数のバイトコード。 次に、JITサーバーはバイトコードをコンパイルし、結果の実行可能ネイティブコードを共有メモリ（セクションオブジェクト）を使用して呼び出しプロセスに書き戻します。 その後、コンテンツプロセスは、動的コードポリシーに違反することなく、結果の実行可能コードを実行できます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     実行中のプロセスの観点から見ると、JITサーバーは他のコンテンツプロセスと同じように見え、同じexeファイルであるMicrosoftEdgeCP.exeを使用します。 大きな違いは、ACGメカニズムがJITプロセスに対して有効になっていないことです。これにより、実行可能コードをコンテンツプロセスに投影し直すことができます。 この場合、1つのJITサーバープロセスのみが起動され、既存のすべてのコンテンツプロセスを処理します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h2> おわりに </h2>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      ACGは、実行可能なメモリの割り当てと変更を防ぐという当面の目標を達成することに成功しています。 ただし、一方ではCFG、ACG、CIGの相互依存性、および他方ではMicrosoft Windowsでの現在のCFG実装の欠点のため、ACGは高度な攻撃がブラウザのサンドボックスから出るのを防ぐための十分な手段ではありません。 したがって、ACGが悪用の重大な障害になる前に、Microsoftは既知のCFGのすべての欠陥を修正する必要があります。 </div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+<section class="more-articles-navigation-panel js-more-articles-navigation-panel">
+<h4>More articles:</h4>
+<nav class="list-of-articles-container js-list-of-articles-container"><ul class="list-of-pages js-list-of-pages">
+<li><a href="../J358632/index.html">JS DevDay。 レポート記録</a></li>
+<li><a href="../J358634/index.html">ポータブルスピーカーの音声メニューの変更</a></li>
+<li><a href="../J358638/index.html">FPP over FPL：FPGAの高速ダウンロード</a></li>
+<li><a href="../J358646/index.html">セキュリティウィーク17：車の台頭</a></li>
+<li><a href="../J358648/index.html">光反射率計を発明した方法</a></li>
+<li><a href="../J358656/index.html">Raiffeisenbank UPD BroadcastのJava Meetupにご招待します</a></li>
+<li><a href="../J358658/index.html">破壊可能なメッシュの作成</a></li>
+<li><a href="../J358664/index.html">タイプミスの修正、側面図</a></li>
+<li><a href="../J358668/index.html">何かを学ぶには？</a></li>
+<li><a href="../J358670/index.html">仮想サーバーのレーザー脱毛</a></li>
+</ul></nav>
+</section><br />
+<a href="../../allArticles.html"><strong>All Articles</strong></a>
+<script src="../../js/main.js"></script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript" >
+  (function (d, w, c) {
+      (w[c] = w[c] || []).push(function() {
+          try {
+              w.yaCounter70218013 = new Ya.Metrika({
+                  id:70218013,
+                  clickmap:true,
+                  trackLinks:true,
+                  accurateTrackBounce:true,
+                  webvisor:true
+              });
+          } catch(e) { }
+      });
+
+      var n = d.getElementsByTagName("script")[0],
+          s = d.createElement("script"),
+          f = function () { n.parentNode.insertBefore(s, n); };
+      s.type = "text/javascript";
+      s.async = true;
+      s.src = "https://mc.yandex.ru/metrika/watch.js";
+
+      if (w.opera == "[object Opera]") {
+          d.addEventListener("DOMContentLoaded", f, false);
+      } else { f(); }
+  })(document, window, "yandex_metrika_callbacks");
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/70218013" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+
+<!-- Google Analytics -->
+  <script>
+    window.ga = function () { ga.q.push(arguments) }; ga.q = []; ga.l = +new Date;
+    ga('create', 'G-FEDBM7F51Q', 'auto'); ga('send', 'pageview')
+  </script>
+  <script src="https://www.google-analytics.com/analytics.js" async defer></script>
+
+</section>
+
+<footer class="page-footer">
+  <div class="page-footer-legal-info-container page-footer-element">
+    <p>
+      Clever Geek | <span class="page-footer-legal-info-year js-page-footer-legal-info-year">2020</span>
+    </p>
+  </div>
+  <div class="page-footer-counters-container page-footer-element">
+    <div class="company-info js-company-info" itemscope="" itemtype="http://schema.org/Organization">
+      <span itemprop="name">Western Town Media (WTM)</span>
+      <div itemprop="address" itemscope="" itemtype="http://schema.org/PostalAddress">
+        <span itemprop="streetAddress">1968 Stoney Lonesome Road</span>
+        <br>
+        <span itemprop="postalCode">PA 18640</span>
+        <span itemprop="addressLocality">Pittston, USA</span>
+      </div>
+      <span itemprop="telephone">570-362-1316</span>
+    </div>
+    <script type="application/ld+json">
+      {
+        "@context": "http://schema.org",
+        "@type": "Organization",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Pittston, USA",
+          "postalCode": "PA 18640",
+          "streetAddress": "1968 Stoney Lonesome Road"
+        },
+        "name": "Western Town Media (WTM)",
+        "telephone": "570-362-1316"
+      }
+    </script>
+  </div>
+</footer>
+  
+</body>
+
+</html>

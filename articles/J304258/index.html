@@ -1,0 +1,2817 @@
+<!doctype html>
+<html class="no-js" lang="en">
+
+<head>
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-FEDBM7F51Q"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-FEDBM7F51Q');
+  </script>
+
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <title>🥅 👧🏿 🔤 Postgres内部のクエリジャーニーを選択する 👨‍⚕️ 🗿 🙅</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <meta name="description" content="PG Day'16 Russiaカンファレンスまであと数日しかありません;スケジュールは弊社のウェブサイトでご覧いただけます。 私たちは一生懸命働いていますが、PostgreSQLに関する最も興味深い資料の翻訳を準備しています。 今日は、選択クエリの動作に関するPat Shaughnessyの記事の...">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml"/>
+
+  <link rel="stylesheet" href="../../css/main.css">
+
+  <link href="https://fonts.googleapis.com/css?family=Quicksand&display=swap" rel="stylesheet">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+  <script>document.write('<script src="https://pagea' + 'd2.googles' + 'yndication.com/pagea' + 'd/js/a' + 'dsby' + 'google.js"><\/script>')</script>
+  <script>
+        var superSpecialObject = {};
+        superSpecialObject['google_a' + 'd_client'] = 'ca-p' + 'ub-6974184241884155';
+        superSpecialObject['enable_page_level_a' + 'ds'] = true;
+       (window['a' + 'dsbygoogle'] = window['a' + 'dsbygoogle'] || []).push(superSpecialObject);
+  </script>
+</head>
+
+<body>
+  <!--[if lte IE 9]>
+    <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience and security.</p>
+  <![endif]-->
+  <header class="page-header js-page-header">
+    <a class="page-header-logo-container" href="https://tech-in-japan.github.io/index.html"></a>
+    <div class="page-header-text">Clever Geek Handbook</div>
+  </header>
+  <section class="page js-page"><h1>Postgres内部のクエリジャーニーを選択する</h1><div class="post__text post__text-html js-mediator-article" id="post-content-body" data-io-article-url="https://habr.com/ru/post/304258/">  <i><b>PG Day'16 Russia</b>カンファレンスまであと数日しかありません;スケジュールは弊社のウェブサイトでご覧いただけます。</i>  <i>私たちは一生懸命働いていますが、PostgreSQLに関する最も興味深い資料の翻訳を準備しています。</i>  <i>今日は、選択クエリの動作に関する<a href="http://patshaughnessy.net/">Pat Shaughnessy</a>の記事の翻訳です。</i> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     この夏のプレゼンテーションの準備として、PostgreSQL Cソースコードの一部を調査することにし、非常に単純な選択クエリを実行し、CデバッガーであるLLDBを使用してPostgresがそれをどのように処理するかを見ました。 彼は私が探していたデータをどのように見つけましたか？ 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/ac8/78a/513/ac878a513fa64cc6a4368c472c777932.jpg">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     この投稿は、PostgreSQLの内部についての私の旅の非公式ジャーナルです。 私が旅した道と、その過程で見たものを説明します。 一連の単純な概念図を使用して、Postgresが私の要求をどのように満たしたかを説明します。  Cを理解している場合、Postgresの内部を突っ込んだ場合にあなたが探すことができるガイドラインとポインタも残しておきます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      PostgreSQLのソースコードは私を喜ばせました。 クリーンで、十分に文書化されており、理解しやすいことがわかりました。  Postgresが内部からどのように機能するかを自分で確認し、毎日使用する楽器の深みへの旅に参加してください。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <a name="habracut"></a>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h3>  <font color="#000000">キャプテンニモを見つける</font> </h3>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     これ<a href="http://patshaughnessy.net/2014/9/17/20000-leagues-under-activerecord">は私のプレゼンテーションの前半</a>からのリクエストの例です。 彼がCaptain Nemoを検索している間、Postgresをフォローします。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/998/26a/374/99826a37400f4e368739d476ef1e6586.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     テキスト列で単一の名前を見つけるのは簡単ですよね？ 深海のダイバーがロープにつかまって水面に戻る方法を調べながら、Postgresの内部を調べて、この選択クエリを厳しく保持します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h3>  <font color="#000000">全体像</font> </h3>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      PostgresはこのSQL文字列で何をしますか？ 彼は私たちの意味をどのように理解していますか？ 彼はどのデータを探しているのかをどのようにして知るのでしょうか？ 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Postgresは、送信する各SQLコマンドを4つのステップで処理します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/d52/a99/861/d52a99861b694d81a8f881a740e72d4e.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     最初に、PostgreSQL <i>は</i> SQLクエリを<i>解析し</i> 、それをメモリに保存されている一連のCデータ構造、つまり<i>解析ツリーに</i>変換し<i>ます</i> 。 その後、Postgresはクエリを<i>分析</i>および<i>書き換え</i> 、一連の複雑なアルゴリズムを使用してクエリを最適化および簡素化します。 その後、彼はデータを検索する<i>計画</i>を作成します。 ポートフォリオが入念に詰められるまで家を出ない強迫性障害の人のように、Postgresは計画を立てるまでリクエストを開始しません。 最後に、Postgres <i>が</i>要求<i>を満たし</i>ます。 このプレゼンテーションでは、最初の3つのステップに簡単に触れた後、最後<i>の、リクエストの実行に</i>焦点を当てます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     この4段階のプロセスを実行するPostgres内のC関数は、exec_simple_queryと呼ばれます。  Postgresがexec_simple_queryを呼び出すタイミングと方法の詳細を示すLLDBトレースとともに、以下へのリンクを見つけることができます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <hr>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/getpro/habr/post_images/35b/699/c9a/35b699c9ae8b4cc5f6d7437e14115b9c.png" alt="画像" align="left">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h1>  exec_simple_query </h1>  <a href="http://doxygen.postgresql.org/postgres_8c.html">postgresql.orgで表示</a> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/getpro/habr/post_images/f03/b49/c82/f03b49c82251f42679c82746c461d0ea.png" alt="画像">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/getpro/habr/post_images/03a/932/f5a/03a932f5a87e950d8a042b01951da3e9.png" alt="画像">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <hr>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h3>  <font color="#000000">解析</font> </h3>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Postgresは、送信したSQL文字列をどのように理解しますか？ 選択クエリのキーワードとSQ​​L式でどのように意味がありますか？  <i>parsing</i>と呼ばれるプロセスを通じて。  Postgresは、SQL文字列を、彼が理解する内部データ構造、つまり解析ツリーに変換します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      PostgresはRubyと同じ解析テクノロジー、つまり<a href="http://www.gnu.org/software/bison/">Bison</a>と呼ばれるパーサージェネレーターを使用していることがわかります。  Bisonはpostgresビルドプロセス中に動作し、一連の文法規則に基づいてパーサーコードを生成します。 生成されたパーサーコードは、SQLコマンドを送信したときにPostgres内で機能するものです。 生成されたパーサーがSQL文字列で対応するパターンまたは構文を検出し、構文解析ツリーに新しいCメモリ構造を挿入すると、各文法規則が呼び出されます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     今日は、解析アルゴリズムの仕組みの詳細な説明に時間を費やしません。 これらのトピックに興味がある場合は、私の本<a href="http://patshaughnessy.net/ruby-under-a-microscope">Ruby Under a Microscope</a>を読むことをお勧めします。 最初の章では、BisonとRubyで使用されるLALR解析アルゴリズムの例を詳しく見ていきます。  Postgresは、まったく同じ方法でSQLクエリを解析します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      LLDBを使用し、一部のログコードCをアクティブにして、PostgresパーサーがCaptain Nemoの検索クエリ用に次の解析ツリーを作成するのを見ました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/247/1a6/42d/2471a642d1894a4181a72b0ba5e25918.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     最上部は完全なSQLクエリを表すノードであり、下はSQLクエリ構文のさまざまな部分を表す子ノードまたはブランチです：ターゲットリスト（列のリスト）、条件（テーブルのリスト）、WHERE句、ソート順、レコード数。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      PostgresがSQLクエリを解析する方法の詳細を知りたい場合は、pg_parse_queryと呼ばれる別のC関数を使用して、exec_simple_queryからの実行順序に従います。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <hr>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/getpro/habr/post_images/35b/699/c9a/35b699c9ae8b4cc5f6d7437e14115b9c.png" alt="画像" align="left">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h1>  pg_parse_query </h1>  <a href="http://doxygen.postgresql.org/postgres_8c.html">postgresql.orgで表示</a> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/70b/0ab/afa/70b0abafab0f437991e3946f6ad1e738.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/8d3/243/406/8d3243406f0a4483be674cfa06bc24e7.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <hr>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     ご覧のとおり、Postgresのソースコードには、何が起こっているのかを説明するだけでなく、重要な設計上の決定を示す多くの便利で詳細なコメントがあります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h3>  <font color="#000000">尾の下の犬のすべての仕事</font> </h3>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     上記の構文解析ツリーはおそらくおなじみのように思えます。これは、ActiveRecordで以前に観察したのとほぼ同じ抽象構文ツリー（AST）です。  <a href="http://patshaughnessy.net/2014/9/17/20000-leagues-under-activerecord">プレゼンテーションの最初の部分を</a>思い出してください。ActiveRecordは、Rubyでこのクエリを実行したときに、Captain Nemoに関する選択クエリを生成しました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/e1a/8a0/7d5/e1a8a07d5671477d984148fea3de5b5f.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      whereおよびfirstのようなメソッドを呼び出すと、ActiveRecordが内部ASTビューを作成することがわかりました。 後で（ <a href="http://patshaughnessy.net/2014/9/23/how-arel-converts-ruby-queries-into-sql-statements">2番目の投稿を</a>参照）、gem Arelが訪問者パターンに基づくアルゴリズムを使用してASTをサンプル選択クエリに変換するのを見ました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     考えてみると、PostgresがSQLクエリで最初に行うことは、文字列からASTに戻すことです。  Postgresの解析プロセスは、ActiveRecordが以前に行ったすべてをキャンセルし、gem Arelが行ったすべてのハードワークは無駄になりました！  SQL文字列を作成する唯一の理由は、ネットワーク経由でPostgresにアクセスすることです。 しかし、Postgresはリクエストを受信するとすぐに、ASTに戻します。これは、リクエストを送信するためのはるかに便利で便利な方法です。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     これを学んだ後、あなたは尋ねるかもしれません：より良い方法はありますか？  SQLクエリを作成せずに、必要なデータをPostgresに概念的に説明する他の方法はありますか？ 複雑なSQL言語やActiveRecordとArelを使用する余分なオーバーヘッドを学ぶ必要はありませんか？  ASTからSQL文字列を作成して、再びASTに戻すためだけに長い時間を費やすのは、非常に時間の無駄です。 代わりにNoSQLソリューションを使用する必要がありますか？ 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     もちろん、Postgresが使用するASTはActiveRecordが使用するASTとは非常に異なります。  ActiveRecordでは、ASTはRubyオブジェクトで構成され、Postgresでは、メモリに格納された一連のC言語構造で構成されます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h3>  <font color="#000000">分析と書き換え</font> </h3>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Postgresは構文解析ツリーを生成すると、異なるノードのセットを使用して別のツリーに変換します。 これは<i>クエリツリー</i>として知られ<i>ています</i> 。  C関数exec_simple_queryに戻ると、別のC関数-pg_analyze_and_rewriteが呼び出されていることがわかります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <hr>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/getpro/habr/post_images/35b/699/c9a/35b699c9ae8b4cc5f6d7437e14115b9c.png" alt="画像" align="left">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h1>  pg_analyze_and_rewrite </h1>  <a href="http://doxygen.postgresql.org/postgres_8c.html">postgresql.orgで表示</a> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/ebd/586/d66/ebd586d668794a36878f030a956d6591.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/fa0/d3d/8c7/fa0d3d8c7f304e00b88d6ce4f6e242f9.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <hr>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     詳細を説明することなく、分析および書き換えプロセスでは、SQLクエリを最適化および簡素化するために、多数の複雑なアルゴリズムとヒューリスティックを使用します。 ネストされたクエリと多数の内部および外部結合を使用して複雑な選択クエリを実行する場合、最適化の範囲は膨大です。  Postgresは、ネストされたクエリまたは結合の数を減らして、より簡単なクエリを作成できる可能性があります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     単純な選択クエリの場合、pg_analyze_and_rewriteは次のクエリツリーを作成しました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/849/bd0/33e/849bd033ebbc494bb27526b91eb7c444.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      pg_analyze_and_rewriteの背後にあるアルゴリズムを詳細に理解しているふりはしません。 この例では、クエリツリーは構文解析ツリーに非常に似ていることに気付きました。 これは、選択クエリが非常に単純だったため、Postgresでさらに簡単にできなかったことを意味します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h3>  <font color="#000000">計画</font> </h3>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Posgresが要求を満たす前に行う最後の作業は、計画の作成です。 このプロセスには、Postgresの指示のリストであるノードの3番目のツリーの作成が含まれます。 選択リクエストのプランツリーを次に示します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/9ff/cbb/369/9ffcbb3694bf48458430df47dc0f7538.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     計画ツリーのすべてのノードがマシンまたはワーカーであると想像してください。 計画ツリーは、工場のデータパイプラインまたはコンベヤベルトに似ています。 私の簡単な例では、ツリーにはブランチが1つしかありません。 計画ツリーの各ノードは、基礎となるノードの出力からデータを取得して処理し、結果を上のノードのソースデータとして返します。 次の段落では、彼が計画を実行するときにPostgresをフォローします。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     クエリスケジューリングプロセスを開始するC関数は、pg_plan_queriesと呼ばれます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <hr>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/getpro/habr/post_images/35b/699/c9a/35b699c9ae8b4cc5f6d7437e14115b9c.png" alt="画像" align="left">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h1>  pg_plan_queries </h1>  <a href="http://doxygen.postgresql.org/postgres_8c.html">postgresql.orgで表示</a> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/06b/1ed/7b0/06b1ed7b06184649a3cc321c2e2e87b9.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/d58/2a0/bdf/d582a0bdf52c47a9ab6bab54ced03821.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <hr>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     各ノードのstartup_costおよびtotal_cost値に注意してください。  Postgresはこれらの値を使用して、計画を完了するのにかかる時間を推定します。 リクエストの実行計画を確認するためにCデバッガーを使用する必要はありません。 クエリの最初にSQL EXPLAINコマンドを追加するだけです。 このように： 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/da8/2c6/8b6/da82c68b6e224e46b782b2d4ed8e5461.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     これは、pg_plan_queriesの複雑なスケジューリングアルゴリズムにもかかわらず、Postgresがクエリの1つで内部的に行っていることと、それが遅いまたは非効率である理由を理解するための素晴らしい方法です。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h3>  <font color="#000000">計画ノード実行の制限</font> </h3>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     この時点で、PostgresはSQL文字列を解析し、それをASTに変換し直しました。 それから彼はそれを最適化し、書き直し、おそらくそれを単純化した。 その後、Postgresは、探しているデータを見つけて返すために従う計画を書きました。 そして最後に、Postgresがあなたの要求を満たす時間です！ 彼はどのようにそれをしますか？ もちろん、計画に従ってください！ 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     計画ツリーの最上部から始めて、下に移動しましょう。 ルートノードをスキップすると、PostgresがCaptain Nemoのリクエストに使用する最初の従業員はLimitと呼ばれます。 ご想像のとおり、LimitノードはSQL LIMITコマンドを実行し、結果を特定のレコード数に制限します。 また、このプランノードはOFFSETコマンドを実行し、指定された行から開始して一連の結果を含むウィンドウを開始します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/1bd/8bc/295/1bd8bc29583442bcadd0e6eaecafa7e5.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     制限ノードが初めて呼び出されたとき、Postgresは制限値とオフセット値を計算します。これらの値は動的な計算の結果に結び付けられるためです。 この例では、オフセットは0で、制限は1です。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     次に、Limit planノードは、オフセット値に達するまでサブプラン（この場合はSort）を繰り返し呼び出します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/464/327/ec9/464327ec95894dae976575855e63c876.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     この例では、オフセットはゼロであるため、このループは最初のデータ値をロードし、反復を停止します。 その後、Postgresは、サブプランから呼び出し元または上位のプランにロードされた最後のデータ値を返します。 私たちにとって、これはサブプランからの最初の値になります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     最後に、PostgresがLimitノードを呼び出し続けると、サブプランからデータ値を1つずつ送信します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/66c/8cc/e4e/66c8cce4ef6d4fdcb3636056dfcead7d.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     この例では制限は1であるため、LimitはすぐにNULLを返し、上位のプランに対して利用可能なデータがないことを示します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Postgresは、nodeLimit.cというファイルのコードを使用して制限ノードを実行します 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <hr>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/getpro/habr/post_images/35b/699/c9a/35b699c9ae8b4cc5f6d7437e14115b9c.png" alt="画像" align="left">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h1> 実行制限 </h1>  <a href="http://doxygen.postgresql.org/nodeLimit_8c.html">postgresql.orgで表示</a> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/997/c9c/460/997c9c460b004fcfb810eea1ae3bffb2.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/981/ab3/f33/981ab3f33602418d95c69839c204e0d6.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <hr>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Postgresのソースコードが<i>タプル</i> （値のセット、各列から1つ）や<i>サブプラン</i>などの単語を使用していることが<i>わかり</i>ます。 この例では、サブプランはソートノードであり、プランの制限の下にあります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h3>  <font color="#000000">ソートプランノードの実行</font> </h3>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     制限フィルターのデータ値はどこから来ますか？ プランツリーの[制限]の下にある[並べ替え]ノードから。 ソートは、そのサブプランからデータ値をロードし、それらを呼び出し制限ノードに返します。 次に、Limitノードが最初に呼び出して最初のデータ値を取得するときにSortが行うことを示します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/923/bad/ca4/923badca4fed491fa722e9ed7bef8752.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     ご覧のとおり、ソート機能は制限とはまったく異なります。 何かを返す前に、利用可能なすべてのデータをサブプランからバッファにすぐにロードします。 次に、 <a href="https://en.wikipedia.org/wiki/Quicksort">Quicksort</a>アルゴリズムを使用してバッファーを並べ替え、最後に並べ替えられた最初の値を返します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      2回目以降の呼び出しでは、Sortはソートされたバッファから追加の値を返すだけで、サブプランを再度呼び出す必要はなくなりました。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/11a/049/225/11a0492257e54e33b4f409143f4d5987.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     ソートプランノードは、ExecSortと呼ばれるC関数によって実行されます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <hr>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/getpro/habr/post_images/35b/699/c9a/35b699c9ae8b4cc5f6d7437e14115b9c.png" alt="画像" align="left">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h1> エグゼクソート </h1>  <a href="http://doxygen.postgresql.org/nodeSort_8c.html">postgresql.orgで表示</a> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/34d/29f/9c2/34d29f9c2e95451fb3e783a41f0eb240.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/3e1/992/0a7/3e19920a719243f68e9da0bdd98ba7c4.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <hr>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h3>  <font color="#000000">SeqScan計画ノードの実行</font> </h3>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      ExecSortはどこから値を取得しますか？ そのサブランから-プランツリーの一番下にあるSeqScanノード。  SeqScanは<i>順次スキャンの</i>略で、テーブル内のすべての値を表示し、指定されたフィルターに一致する値を返すことを意味します。 スキャンがフィルターでどのように機能するかを理解するために、架空の名前が入力されたユーザーテーブルを想像して、Captain Nemoを探してみましょう。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/b4e/ad9/8f2/b4ead98f27314d429a594020b1161d3c.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Postgresは、テーブル内の最初のレコード（Postgresソースコードでは<i>関係</i>と呼ばれます）から始まり、プランツリーからブール式を開始します。 簡単に言えば、Postgresは「このキャプテンニモですか？」という質問をします。ローリアン・グッドウィンはキャプテンニモではないため、Postgresは次の投稿に進みます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/c44/9ba/b3c/c449bab3c2624b79924117aac4a84485.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     いいえ、キャンディスはキャプテンニモでもありません。  Postgresは続きます： 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/0c9/922/c74/0c9922c745ca47e886612e70538b508c.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      ...そしてついにキャプテンニモを見つけました！ 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/7dd/6ea/2f8/7dd6ea2f80e94101894b7194b3328aec.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Postgresは、ExecSeqScanと呼ばれるC関数を使用してSeqScanノードを実行します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <hr>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/getpro/habr/post_images/35b/699/c9a/35b699c9ae8b4cc5f6d7437e14115b9c.png" alt="画像" align="left">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h1>  ExecSeqScan </h1>  <a href="http://doxygen.postgresql.org/nodeSeqscan_8c.html">postgresql.orgで表示</a> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/bcf/d7c/ff0/bcfd7cff07074e3d951ff322df50f223.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/cd4/35f/157/cd435f1571fc46ebbf3967b7cced7eac.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <hr>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h3>  <font color="#000000">私たちは何を間違っていますか？</font> </h3>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     これで終わりです！  Postgresの内部全体で単純な選択クエリを実行し、それがどのように解析、書き換え、計画、および最終的に実行されるかを確認しました。 何千行ものCコードを実行した後、Postgresは探しているデータを見つけました！ これで、Captain Nemoの行をRailsアプリケーションに戻すだけで、ActiveRecordがRubyオブジェクトを作成できるようになります。 最後に、アプリケーションの表面に戻ることができます。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     しかし、Postgresは止まりません！ データを返すだけでなく、ユーザーテーブルのスキャンを続けますが、Captain Nemoが既に見つかっています。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/280/f4f/1dc/280f4f1dc434482aa5284d4763ba9fa7.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     何が起こっているの？ 必要なデータを既に見つけているにもかかわらず、Postgresが検索に時間を費やすのはなぜですか？ 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     答えは、プランツリーの[並べ替え]ノードにあります。 すべてのユーザーを並べ替えるために、ExecSortは最初にすべての値をバッファーにロードし、値がなくなるまでサブプランを繰り返し呼び出します。 つまり、 <i>ExecSeqScanは</i> 、適切なユーザーをすべて収集するまで<i>、テーブルの最後までスキャンを続け</i>ます。 テーブルに数千または数百万のレコードが含まれている場合（FacebookまたはTwitterで作業していると想像してください）、ExecSeqScanはすべてのユーザーレコードについてサイクルを繰り返し、それぞれについて比較を実行する必要があります。 明らかに、これは遅くて非効率的であり、新しいユーザーエントリがテーブルに追加されるにつれて、ますます遅くなります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Captain Nemoに関するレコードが1つしかない場合、ExecSortはこの適切なレコードのみを「ソート」し、ExecLimitはそのレコードをオフセット/制限フィルターに渡しますが、ExecSeqScanがすべての名前を通過した後にのみです。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h3>  <font color="#000000">次回</font> </h3>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     この問題を解決するには？ ユーザーテーブルでSQLクエリを実行するためにますます時間が必要な場合はどうなりますか？ 答えは簡単です。インデックスを作成します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     このシリーズの次と最後の投稿では、Postgresでインデックスを作成し、ExecSeqScanの使用を避ける方法を学びます。 しかし、最も重要なことは、Postgresでインデックスがどのように見えるかを示します。それがどのように機能し、なぜこのようなクエリを高速化するかです。 </div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+<section class="more-articles-navigation-panel js-more-articles-navigation-panel">
+<h4>More articles:</h4>
+<nav class="list-of-articles-container js-list-of-articles-container"><ul class="list-of-pages js-list-of-pages">
+<li><a href="../J30425/index.html">音楽ライブラリ</a></li>
+<li><a href="../J304250/index.html">Databoomコントロールパネル。 コレクションを操作します。 パート2</a></li>
+<li><a href="../J304252/index.html">グリッドの中心対称性</a></li>
+<li><a href="../J304254/index.html">米国の「無料」修士課程入学試験</a></li>
+<li><a href="../J304256/index.html">認知症の人向けのウェブサイトのデザイン</a></li>
+<li><a href="../J30426/index.html">PHP 5.3アルファ</a></li>
+<li><a href="../J304260/index.html">Google I / O 2016：WatchFace 2.0-合併症</a></li>
+<li><a href="../J304262/index.html">人類をインターネットから解放する唯一の方法は、＃スポーツです</a></li>
+<li><a href="../J304268/index.html">地図上の映画館-最寄りの映画館で最も近い映画ショーを見つける</a></li>
+<li><a href="../J304270/index.html">Verlet因子ベースのモデリング</a></li>
+</ul></nav>
+</section><br />
+<a href="../../allArticles.html"><strong>All Articles</strong></a>
+<script src="../../js/main.js"></script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript" >
+  (function (d, w, c) {
+      (w[c] = w[c] || []).push(function() {
+          try {
+              w.yaCounter70218013 = new Ya.Metrika({
+                  id:70218013,
+                  clickmap:true,
+                  trackLinks:true,
+                  accurateTrackBounce:true,
+                  webvisor:true
+              });
+          } catch(e) { }
+      });
+
+      var n = d.getElementsByTagName("script")[0],
+          s = d.createElement("script"),
+          f = function () { n.parentNode.insertBefore(s, n); };
+      s.type = "text/javascript";
+      s.async = true;
+      s.src = "https://mc.yandex.ru/metrika/watch.js";
+
+      if (w.opera == "[object Opera]") {
+          d.addEventListener("DOMContentLoaded", f, false);
+      } else { f(); }
+  })(document, window, "yandex_metrika_callbacks");
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/70218013" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+
+<!-- Google Analytics -->
+  <script>
+    window.ga = function () { ga.q.push(arguments) }; ga.q = []; ga.l = +new Date;
+    ga('create', 'G-FEDBM7F51Q', 'auto'); ga('send', 'pageview')
+  </script>
+  <script src="https://www.google-analytics.com/analytics.js" async defer></script>
+
+</section>
+
+<footer class="page-footer">
+  <div class="page-footer-legal-info-container page-footer-element">
+    <p>
+      Clever Geek | <span class="page-footer-legal-info-year js-page-footer-legal-info-year">2020</span>
+    </p>
+  </div>
+  <div class="page-footer-counters-container page-footer-element">
+    <div class="company-info js-company-info" itemscope="" itemtype="http://schema.org/Organization">
+      <span itemprop="name">Western Town Media (WTM)</span>
+      <div itemprop="address" itemscope="" itemtype="http://schema.org/PostalAddress">
+        <span itemprop="streetAddress">1968 Stoney Lonesome Road</span>
+        <br>
+        <span itemprop="postalCode">PA 18640</span>
+        <span itemprop="addressLocality">Pittston, USA</span>
+      </div>
+      <span itemprop="telephone">570-362-1316</span>
+    </div>
+    <script type="application/ld+json">
+      {
+        "@context": "http://schema.org",
+        "@type": "Organization",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Pittston, USA",
+          "postalCode": "PA 18640",
+          "streetAddress": "1968 Stoney Lonesome Road"
+        },
+        "name": "Western Town Media (WTM)",
+        "telephone": "570-362-1316"
+      }
+    </script>
+  </div>
+</footer>
+  
+</body>
+
+</html>

@@ -1,0 +1,1495 @@
+<!doctype html>
+<html class="no-js" lang="en">
+
+<head>
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-FEDBM7F51Q"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-FEDBM7F51Q');
+  </script>
+
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <title>📕 🤛🏾 👨🏾‍🍳 メディアンフィルタリングの例を使用したGPU画像処理の最適化 ♦️ 🤦🏿 🤷🏿</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <meta name="description" content="はじめに  
+  
+ 
+
+ グラフィックアクセラレータ（GPU）は、画像およびビデオ処理用に長い間作成されてきました。 ある時点で、GPUは汎用コンピューティングに使用されるようになりました。 しかし、中央処理装置の開発もまだ続きませんでした。インテルは、ベクトル拡張（AVX256、AVX512、A...">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml"/>
+
+  <link rel="stylesheet" href="../../css/main.css">
+
+  <link href="https://fonts.googleapis.com/css?family=Quicksand&display=swap" rel="stylesheet">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+  <script>document.write('<script src="https://pagea' + 'd2.googles' + 'yndication.com/pagea' + 'd/js/a' + 'dsby' + 'google.js"><\/script>')</script>
+  <script>
+        var superSpecialObject = {};
+        superSpecialObject['google_a' + 'd_client'] = 'ca-p' + 'ub-6974184241884155';
+        superSpecialObject['enable_page_level_a' + 'ds'] = true;
+       (window['a' + 'dsbygoogle'] = window['a' + 'dsbygoogle'] || []).push(superSpecialObject);
+  </script>
+</head>
+
+<body>
+  <!--[if lte IE 9]>
+    <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience and security.</p>
+  <![endif]-->
+  <header class="page-header js-page-header">
+    <a class="page-header-logo-container" href="https://tech-in-japan.github.io/index.html"></a>
+    <div class="page-header-text">Clever Geek Handbook</div>
+  </header>
+  <section class="page js-page"><h1>メディアンフィルタリングの例を使用したGPU画像処理の最適化</h1><div class="post__text post__text-html js-mediator-article" id="post-content-body" data-io-article-url="https://habr.com/ru/post/305964/"><h1> はじめに </h1>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <p> グラフィックアクセラレータ（GPU）は、画像およびビデオ処理用に長い間作成されてきました。 ある時点で、GPUは汎用コンピューティングに使用されるようになりました。 しかし、中央処理装置の開発もまだ続きませんでした。インテルは、ベクトル拡張（AVX256、AVX512、AVX1024）の開発に向けて積極的に開発しています。 その結果、異なるプロセッサが表示されます-コア、Xeon、Xeon Phi。 画像処理は、簡単にベクトル化されるこのようなクラスのアルゴリズムに起因します。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     しかし、実践が示すように、かなり高いレベルのコンパイラーとXeon Phiの中央プロセッサーとコプロセッサーの適応性にもかかわらず、現代のコンパイラーは自動ベクトル化が不十分であり、ベクトル組み込み関数の使用は非常に難しいため、ベクトル命令を使用して画像処理を行うことはそれほど容易ではありません。 また、手動でベクトル化されたコードとスカラーセクションを組み合わせるという問題も発生します。 </p>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    <a name="habracut"></a>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <p> この<a href="https://habrahabr.ru/post/204682/">記事で</a>は、ベクトル拡張を使用して中央処理装置の中央値フィルタリングを最適化する方法について説明しました。 実験の純度を高めるために、著者と同じ条件をすべて採用しました。3x3の正方形の中央値フィルタリングアルゴリズムを使用し、これらの画像はピクセルあたり8ビットを占有し、フレーム処理（フィルタリング正方形のサイズによる）は行われません。  GPUでこのコアを最適化しようとしました。  5x5平方の中央値フィルタリングのアルゴリズムも検討されました。 アルゴリズムの本質は次のとおりです。 </p>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li> ソースイメージの各ポイントに対して、特定の近傍（この場合は3x3 / 5x5）が取得されます。 </li><li> この近傍のポイントは、明るさの増加によってソートされます。 </li><li> ソートされた近傍の中間点が最終画像に記録されます。 </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h1> 最初のGPUカーネル実装 </h1>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <p>  「不必要な」最適化を行わないために、言及された記事の著者の計算を使用します。 最後に、コンピューティングコアの簡単なコードを取得します。 </p>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre><code class="java hljs"><span class="hljs-function"><span class="hljs-function">__device__ __inline__ </span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">void</span></span></span><span class="hljs-function"> </span><span class="hljs-title"><span class="hljs-function"><span class="hljs-title">Sort</span></span></span><span class="hljs-params"><span class="hljs-function"><span class="hljs-params">(</span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">int</span></span></span></span><span class="hljs-function"><span class="hljs-params"> &amp;a, </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">int</span></span></span></span><span class="hljs-function"><span class="hljs-params"> &amp;b)</span></span></span><span class="hljs-function"> </span></span>{ <span class="hljs-keyword"><span class="hljs-keyword">const</span></span> <span class="hljs-keyword"><span class="hljs-keyword">int</span></span> d = a - b; <span class="hljs-keyword"><span class="hljs-keyword">const</span></span> <span class="hljs-keyword"><span class="hljs-keyword">int</span></span> m = ~(d &gt;&gt; <span class="hljs-number"><span class="hljs-number">8</span></span>); b += d &amp; m; a -= d &amp; m; } <span class="hljs-function"><span class="hljs-function">__global__ </span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">void</span></span></span><span class="hljs-function"> </span><span class="hljs-title"><span class="hljs-function"><span class="hljs-title">mFilter</span></span></span><span class="hljs-params"><span class="hljs-function"><span class="hljs-params">(</span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">const</span></span></span></span><span class="hljs-function"><span class="hljs-params"> </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">int</span></span></span></span><span class="hljs-function"><span class="hljs-params"> H, </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">const</span></span></span></span><span class="hljs-function"><span class="hljs-params"> </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">int</span></span></span></span><span class="hljs-function"><span class="hljs-params"> W, </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">const</span></span></span></span><span class="hljs-function"><span class="hljs-params"> unsigned </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">char</span></span></span></span><span class="hljs-function"><span class="hljs-params"> *in, unsigned </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">char</span></span></span></span><span class="hljs-function"><span class="hljs-params"> *out)</span></span></span><span class="hljs-function"> </span></span>{ <span class="hljs-keyword"><span class="hljs-keyword">int</span></span> idx = threadIdx.x + blockIdx.x * blockDim.x + <span class="hljs-number"><span class="hljs-number">1</span></span>; <span class="hljs-keyword"><span class="hljs-keyword">int</span></span> idy = threadIdx.y + blockIdx.y * blockDim.y + <span class="hljs-number"><span class="hljs-number">1</span></span>; <span class="hljs-keyword"><span class="hljs-keyword">int</span></span> a[<span class="hljs-number"><span class="hljs-number">9</span></span>] = {}; <span class="hljs-keyword"><span class="hljs-keyword">if</span></span> (idy &lt; H - <span class="hljs-number"><span class="hljs-number">1</span></span> &amp;&amp; idx &lt; W - <span class="hljs-number"><span class="hljs-number">1</span></span>) { <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> (<span class="hljs-keyword"><span class="hljs-keyword">int</span></span> z2 = <span class="hljs-number"><span class="hljs-number">0</span></span>; z2 &lt; <span class="hljs-number"><span class="hljs-number">3</span></span>; ++z2) <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> (<span class="hljs-keyword"><span class="hljs-keyword">int</span></span> z1 = <span class="hljs-number"><span class="hljs-number">0</span></span>; z1 &lt; <span class="hljs-number"><span class="hljs-number">3</span></span>; ++z1) a[<span class="hljs-number"><span class="hljs-number">3</span></span> * z2 + z1] = in[(idy - <span class="hljs-number"><span class="hljs-number">1</span></span> + z2) * W + idx - <span class="hljs-number"><span class="hljs-number">1</span></span> + z1]; Sort(a[<span class="hljs-number"><span class="hljs-number">1</span></span>], a[<span class="hljs-number"><span class="hljs-number">2</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">4</span></span>], a[<span class="hljs-number"><span class="hljs-number">5</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">7</span></span>], a[<span class="hljs-number"><span class="hljs-number">8</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">0</span></span>], a[<span class="hljs-number"><span class="hljs-number">1</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">3</span></span>], a[<span class="hljs-number"><span class="hljs-number">4</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">6</span></span>], a[<span class="hljs-number"><span class="hljs-number">7</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">1</span></span>], a[<span class="hljs-number"><span class="hljs-number">2</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">4</span></span>], a[<span class="hljs-number"><span class="hljs-number">5</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">7</span></span>], a[<span class="hljs-number"><span class="hljs-number">8</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">0</span></span>], a[<span class="hljs-number"><span class="hljs-number">3</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">5</span></span>], a[<span class="hljs-number"><span class="hljs-number">8</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">4</span></span>], a[<span class="hljs-number"><span class="hljs-number">7</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">3</span></span>], a[<span class="hljs-number"><span class="hljs-number">6</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">1</span></span>], a[<span class="hljs-number"><span class="hljs-number">4</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">2</span></span>], a[<span class="hljs-number"><span class="hljs-number">5</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">4</span></span>], a[<span class="hljs-number"><span class="hljs-number">7</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">4</span></span>], a[<span class="hljs-number"><span class="hljs-number">2</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">6</span></span>], a[<span class="hljs-number"><span class="hljs-number">4</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">4</span></span>], a[<span class="hljs-number"><span class="hljs-number">2</span></span>]); out[idy * W + idx] = (unsigned <span class="hljs-keyword"><span class="hljs-keyword">char</span></span>)a[<span class="hljs-number"><span class="hljs-number">4</span></span>]; } }</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <p> 各ポイントについて、この写真に従って近傍がロードされます（結果が計算される画像ピクセルは黄色で強調表示されます）。 </p>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/aa6/4f2/2e0/aa64f22e06634a50b2408cf7d1c1a053.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <p> この実装では、マイナスが1つあります。画像は8ビット形式で保存され、計算は32ビットで行われます。  CPUでのベクター実装の戦闘コードを見ると、コンパイラーによっては最適化が機能しないため、並べ替え中の不要な操作の除外など、多くの最適化が適用されていることがわかります。  Nvidiaコンパイラーにはこのような欠点はありません-#pragma unrollが指定されていない場合でも、z2およびz1に2つのループを簡単にデプロイできます（この場合、コンパイラーはループ自体をデプロイすることを決定し、十分なレジスターがない場合、ループはデプロイされません）置換後のソート関数の不要な操作は除外されます（ <strong>インラインの</strong>指定は本質的に助言です。コンパイラーの決定方法に関係なく関数を置換する必要がある場合は、 <strong>forceinlineを</strong>使用する必要があります）。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     上記の記事の中央処理装置（Intel Core-i7 4770 3.4 GHz）とほぼ同じリリース年のNvidia GTX 780 Ti GPUでテストします。 画像サイズ-白黒1920 x 1080ピクセル。 コンパイルされた最初のバージョンをGPUで実行すると、次の時間が発生します。 </p>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <table><tbody><tr><th colspan="3"> リードタイム、ミリ秒 </th><th colspan="3"> 相対加速度 </th></tr><tr><td> スカラーCPU </td><td>  AVX2 CPU </td><td>  Version1 GPU </td><td> スカラー/ AVX2 </td><td> スカラー/バージョン1 </td><td>  AVX2 /バージョン1 </td></tr><tr><td align="center">  24.814 </td><td align="center">  0.424 </td><td align="center">  0.372 </td><td align="center">  58.5 </td><td align="center">  66.7 </td><td align="center">  1.13 </td></tr></tbody></table>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <p> 上記の時間からわかるように、「ネイティブに」コードを書き換えてGPUで実行するだけで、十分な加速が得られ、画像をサイズに合わせるのに問題はありません。GPUのコードは、どのサイズの画像でも同じように動作しますGPUが完全にロードされたとき）。 また、メモリのアライメントについて考える必要はありません-コンパイラがすべてを行います。特別なCUDA RunTime関数を使用してメモリを割り当てるだけで十分です。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     グラフィックアクセラレータに出くわした多くの人は、データをダウンロードしてアップロードし直す必要があるとすぐに言います。  2 MBのイメージに対して15 GB /秒のPCIe 3.0速度を使用すると、一方向伝送で約130マイクロ秒が得られます。 したがって、画像ストリーミングが発生する場合、ロードとアンロードには約260マイクロ秒かかりますが、アカウントには約372マイクロ秒かかります。つまり、最も「ネイティブ」な実装でも、GPUへの転送がカバーされます。 また、画像あたり260マイクロ秒よりも高速であるため、画像ストリームの処理が失敗すると結論付けることもできます。 ただし、1つの画像の処理中にこのフィルターを別の10個のフィルターと併用すると、このカーネルのさらなる最適化が役立ちます。 </p>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h1>  2番目のGPUコアの実装 </h1>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <p> ソート操作の効率を高めるために、最近追加されたSIMD命令を使用できます。 これらの命令は、2つのunsigned / signed shortまたは4つのunsigned / signed charの1つの操作で数学関数を計算できる組み込み関数です。 利用可能な機能のリストは、Cuda ToolKitの<a href="http://docs.nvidia.com/cuda/cuda-math-api/group__CUDA__MATH__INTRINSIC__SIMD.html">ドキュメントに記載</a>されてい<a href="http://docs.nvidia.com/cuda/cuda-math-api/group__CUDA__MATH__INTRINSIC__SIMD.html">ます</a> 。  2つの関数が必要です：vminu4（unsigned a、usnigned b）およびvmaxu4（unsigned a、unsigned b）。 符号付き8ビット値なしの4xの最小値と最大値を計算します。  4つの値を読み込むには、画像全体を水平方向に4つの部分に分割します。各ブロックは、符号なしintのビットシフトを使用して4つの読み込みポイントを組み合わせて、4つのバンドからデータを読み込みます。 </p>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/files/5f5/6af/ce3/5f56afce3151472396e0e7f2d296caab.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <p> アクティブな処理ゾーンはサイズが1920 x 270の最上部の正方形であるため、128 x 1スレッドのブロックはオレンジ色で表示され、128 * 4の要素がロードされます。 ご存じのように、GPUのワープのサイズは32スレッドで構成されています。  1つのワープのすべてのスレッドは、一度にサイクルごとに1つの命令を実行します。 各スレッドはunsigned char型の4つの要素をアップロードするため、1つのワープは1つの命令で合計128要素の処理を実行します。つまり、1024ビットの処理が得られます。  CPUについては、現在256ビットのAVX2レジスタが使用可能です（将来的には512および1024ビットになります）。 これらの最適化により、コンピューティングコアのコードは次の形式に変換されます。 </p>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="java hljs"><span class="hljs-function"><span class="hljs-function">__device__ __inline__ </span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">void</span></span></span><span class="hljs-function"> </span><span class="hljs-title"><span class="hljs-function"><span class="hljs-title">Sort</span></span></span><span class="hljs-params"><span class="hljs-function"><span class="hljs-params">(unsigned </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">int</span></span></span></span><span class="hljs-function"><span class="hljs-params"> &amp;a, unsigned </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">int</span></span></span></span><span class="hljs-function"><span class="hljs-params"> &amp;b)</span></span></span><span class="hljs-function"> </span></span>{ unsigned t = a; a = __vminu4(t, b); b = __vmaxu4(t, b); } <span class="hljs-function"><span class="hljs-function">__global__ </span><span class="hljs-title"><span class="hljs-function"><span class="hljs-title">__launch_bounds__</span></span></span><span class="hljs-params"><span class="hljs-function"><span class="hljs-params">(</span></span><span class="hljs-number"><span class="hljs-function"><span class="hljs-params"><span class="hljs-number">256</span></span></span></span><span class="hljs-function"><span class="hljs-params">, </span></span><span class="hljs-number"><span class="hljs-function"><span class="hljs-params"><span class="hljs-number">8</span></span></span></span><span class="hljs-function"><span class="hljs-params">)</span></span></span><span class="hljs-function"> </span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">void</span></span></span><span class="hljs-function"> </span><span class="hljs-title"><span class="hljs-function"><span class="hljs-title">mFilter_3</span></span></span><span class="hljs-params"><span class="hljs-function"><span class="hljs-params">(</span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">const</span></span></span></span><span class="hljs-function"><span class="hljs-params"> </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">int</span></span></span></span><span class="hljs-function"><span class="hljs-params"> H, </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">const</span></span></span></span><span class="hljs-function"><span class="hljs-params"> </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">int</span></span></span></span><span class="hljs-function"><span class="hljs-params"> W, </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">const</span></span></span></span><span class="hljs-function"><span class="hljs-params"> unsigned </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">char</span></span></span></span><span class="hljs-function"><span class="hljs-params"> * __restrict in, unsigned </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">char</span></span></span></span><span class="hljs-function"><span class="hljs-params"> *out, </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">const</span></span></span></span><span class="hljs-function"><span class="hljs-params"> unsigned stride_Y)</span></span></span><span class="hljs-function"> </span></span>{ <span class="hljs-keyword"><span class="hljs-keyword">int</span></span> idx = threadIdx.x + blockIdx.x * blockDim.x + <span class="hljs-number"><span class="hljs-number">1</span></span>; <span class="hljs-keyword"><span class="hljs-keyword">int</span></span> idy = threadIdx.y + blockIdx.y * blockDim.y + <span class="hljs-number"><span class="hljs-number">1</span></span>; unsigned a[<span class="hljs-number"><span class="hljs-number">9</span></span>] = { <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span> }; <span class="hljs-keyword"><span class="hljs-keyword">if</span></span> (idx &lt; W - <span class="hljs-number"><span class="hljs-number">1</span></span>) { <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> (<span class="hljs-keyword"><span class="hljs-keyword">int</span></span> z3 = <span class="hljs-number"><span class="hljs-number">0</span></span>; z3 &lt; <span class="hljs-number"><span class="hljs-number">4</span></span>; ++z3) { <span class="hljs-keyword"><span class="hljs-keyword">if</span></span> (idy &lt; H - <span class="hljs-number"><span class="hljs-number">1</span></span>) { <span class="hljs-keyword"><span class="hljs-keyword">const</span></span> <span class="hljs-keyword"><span class="hljs-keyword">int</span></span> shift = <span class="hljs-number"><span class="hljs-number">8</span></span> * (<span class="hljs-number"><span class="hljs-number">3</span></span> - z3); <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> (<span class="hljs-keyword"><span class="hljs-keyword">int</span></span> z2 = <span class="hljs-number"><span class="hljs-number">0</span></span>; z2 &lt; <span class="hljs-number"><span class="hljs-number">3</span></span>; ++z2) <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> (<span class="hljs-keyword"><span class="hljs-keyword">int</span></span> z1 = <span class="hljs-number"><span class="hljs-number">0</span></span>; z1 &lt; <span class="hljs-number"><span class="hljs-number">3</span></span>; ++z1) a[<span class="hljs-number"><span class="hljs-number">3</span></span> * z2 + z1] |= in[(idy - <span class="hljs-number"><span class="hljs-number">1</span></span> + z2) * W + idx - <span class="hljs-number"><span class="hljs-number">1</span></span> + z1] &lt;&lt; shift; } idy += stride_Y; } Sort(a[<span class="hljs-number"><span class="hljs-number">1</span></span>], a[<span class="hljs-number"><span class="hljs-number">2</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">4</span></span>], a[<span class="hljs-number"><span class="hljs-number">5</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">7</span></span>], a[<span class="hljs-number"><span class="hljs-number">8</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">0</span></span>], a[<span class="hljs-number"><span class="hljs-number">1</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">3</span></span>], a[<span class="hljs-number"><span class="hljs-number">4</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">6</span></span>], a[<span class="hljs-number"><span class="hljs-number">7</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">1</span></span>], a[<span class="hljs-number"><span class="hljs-number">2</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">4</span></span>], a[<span class="hljs-number"><span class="hljs-number">5</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">7</span></span>], a[<span class="hljs-number"><span class="hljs-number">8</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">0</span></span>], a[<span class="hljs-number"><span class="hljs-number">3</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">5</span></span>], a[<span class="hljs-number"><span class="hljs-number">8</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">4</span></span>], a[<span class="hljs-number"><span class="hljs-number">7</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">3</span></span>], a[<span class="hljs-number"><span class="hljs-number">6</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">1</span></span>], a[<span class="hljs-number"><span class="hljs-number">4</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">2</span></span>], a[<span class="hljs-number"><span class="hljs-number">5</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">4</span></span>], a[<span class="hljs-number"><span class="hljs-number">7</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">4</span></span>], a[<span class="hljs-number"><span class="hljs-number">2</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">6</span></span>], a[<span class="hljs-number"><span class="hljs-number">4</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">4</span></span>], a[<span class="hljs-number"><span class="hljs-number">2</span></span>]); idy = threadIdx.y + blockIdx.y * blockDim.y + <span class="hljs-number"><span class="hljs-number">1</span></span>; <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> (<span class="hljs-keyword"><span class="hljs-keyword">int</span></span> z = <span class="hljs-number"><span class="hljs-number">0</span></span>; z &lt; <span class="hljs-number"><span class="hljs-number">4</span></span>; ++z) { <span class="hljs-keyword"><span class="hljs-keyword">if</span></span> (idy &lt; H - <span class="hljs-number"><span class="hljs-number">1</span></span>) out[idy * W + idx] = (unsigned <span class="hljs-keyword"><span class="hljs-keyword">char</span></span>)((a[<span class="hljs-number"><span class="hljs-number">4</span></span>] &gt;&gt; (<span class="hljs-number"><span class="hljs-number">8</span></span> * (<span class="hljs-number"><span class="hljs-number">3</span></span> - z))) &amp; <span class="hljs-number"><span class="hljs-number">255</span></span>); idy += stride_Y; } } }</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <p> 小さな変更の結果、処理された要素の数を4倍（または命令あたり128要素）に増やしました。 コードの複雑さが増し、コンパイラーが生成するレジスタが多すぎるため、GPUを100％読み込むことができません。 まだ簡単な計算があるので、__ launch_bounds（128、16）を使用して、各ストリームプロセッサで可能な最大数のスレッド（このGPUの最大数は2048スレッド）を実行することをコンパイラーに伝えます。各128スレッドの16ブロックの構成が起動されました。 もう1つのイノベーション-テクスチャキャッシュを使用して重複データを読み込むためのrestrictキーワードを追加します（分析すると、多くのデータがあり、ほとんどのポイントが3回読み取られます）。 テクスチャキャッシュを有効にするには、constも指定する必要があります。 表示はすべて次のようになります。 </p>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="java hljs"><span class="hljs-keyword"><span class="hljs-keyword">const</span></span> unsigned <span class="hljs-keyword"><span class="hljs-keyword">char</span></span> * __restrict in.</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <p>  2番目のバージョンの関連時間： </p>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <table><tbody><tr><th colspan="4"> リードタイム、ミリ秒 </th><th colspan="4"> 相対加速度 </th></tr><tr><td> スカラーCPU </td><td>  AVX2 CPU </td><td>  Version1 GPU </td><td>  Version2 GPU </td><td> スカラー/ AVX2 </td><td> スカラー/バージョン2 </td><td>  AVX2 /バージョン2 </td><td> バージョン1 /バージョン2 </td></tr><tr><td align="center">  24.814 </td><td align="center">  0.424 </td><td align="center">  0.372 </td><td align="center">  0.207 </td><td align="center">  58.5 </td><td align="center">  119.8 </td><td align="center">  2.04 </td><td align="center">  1.79 </td></tr></tbody></table>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h1>  3番目のGPUコアの実装 </h1>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <p> すでに加速は悪くありません。 しかし、この距離で4つの要素をロードすると、繰り返しダウンロードが多すぎることがわかります。 これにより、パフォーマンスが大幅に低下します。 既にレジスターに直接ロードしたものを使用して、データの局所性を改善する方法はありますか？ はい、できます！ これらの4行を互いに近くに配置すると、ブロックの始まりが距離4で高さ全体に「塗り付けられます」。したがって、Yに沿ったスレッドのブロックのサイズを考えると、次のコードに到達します。 </p>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="java hljs">#define BL_X <span class="hljs-number"><span class="hljs-number">128</span></span> #define BL_Y <span class="hljs-number"><span class="hljs-number">1</span></span> <span class="hljs-function"><span class="hljs-function">__device__ __inline__ </span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">void</span></span></span><span class="hljs-function"> </span><span class="hljs-title"><span class="hljs-function"><span class="hljs-title">Sort</span></span></span><span class="hljs-params"><span class="hljs-function"><span class="hljs-params">(unsigned </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">int</span></span></span></span><span class="hljs-function"><span class="hljs-params"> &amp;a, unsigned </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">int</span></span></span></span><span class="hljs-function"><span class="hljs-params"> &amp;b)</span></span></span><span class="hljs-function"> </span></span>{ unsigned t = a; a = __vminu4(t, b); b = __vmaxu4(t, b); } <span class="hljs-function"><span class="hljs-function">__global__ </span><span class="hljs-title"><span class="hljs-function"><span class="hljs-title">__launch_bounds__</span></span></span><span class="hljs-params"><span class="hljs-function"><span class="hljs-params">(</span></span><span class="hljs-number"><span class="hljs-function"><span class="hljs-params"><span class="hljs-number">256</span></span></span></span><span class="hljs-function"><span class="hljs-params">, </span></span><span class="hljs-number"><span class="hljs-function"><span class="hljs-params"><span class="hljs-number">8</span></span></span></span><span class="hljs-function"><span class="hljs-params">)</span></span></span><span class="hljs-function"> </span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">void</span></span></span><span class="hljs-function"> </span><span class="hljs-title"><span class="hljs-function"><span class="hljs-title">mFilter_3a</span></span></span><span class="hljs-params"><span class="hljs-function"><span class="hljs-params">(</span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">const</span></span></span></span><span class="hljs-function"><span class="hljs-params"> </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">int</span></span></span></span><span class="hljs-function"><span class="hljs-params"> H, </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">const</span></span></span></span><span class="hljs-function"><span class="hljs-params"> </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">int</span></span></span></span><span class="hljs-function"><span class="hljs-params"> W, </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">const</span></span></span></span><span class="hljs-function"><span class="hljs-params"> unsigned </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">char</span></span></span></span><span class="hljs-function"><span class="hljs-params"> * __restrict in, unsigned </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">char</span></span></span></span><span class="hljs-function"><span class="hljs-params"> *out)</span></span></span><span class="hljs-function"> </span></span>{ <span class="hljs-keyword"><span class="hljs-keyword">int</span></span> idx = threadIdx.x + blockIdx.x * blockDim.x + <span class="hljs-number"><span class="hljs-number">1</span></span>; <span class="hljs-keyword"><span class="hljs-keyword">int</span></span> idy = threadIdx.y + blockIdx.y * blockDim.y * <span class="hljs-number"><span class="hljs-number">4</span></span> + <span class="hljs-number"><span class="hljs-number">1</span></span>; unsigned a[<span class="hljs-number"><span class="hljs-number">9</span></span>] = { <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span> }; <span class="hljs-keyword"><span class="hljs-keyword">if</span></span> (idx &lt; W - <span class="hljs-number"><span class="hljs-number">1</span></span>) { <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> (<span class="hljs-keyword"><span class="hljs-keyword">int</span></span> z3 = <span class="hljs-number"><span class="hljs-number">0</span></span>; z3 &lt; <span class="hljs-number"><span class="hljs-number">4</span></span>; ++z3) { <span class="hljs-comment"><span class="hljs-comment">//if (idy &lt; H - 1) &lt;---- this is barrier for compiler optimization { const int shift = 8 * (3 - z3); for (int z2 = 0; z2 &lt; 3; ++z2) for (int z1 = 0; z1 &lt; 3; ++z1) a[3 * z2 + z1] |= in[(idy - 1 + z2) * W + idx - 1 + z1] &lt;&lt; shift; } idy += BL_Y; } Sort(a[1], a[2]); Sort(a[4], a[5]); Sort(a[7], a[8]); Sort(a[0], a[1]); Sort(a[3], a[4]); Sort(a[6], a[7]); Sort(a[1], a[2]); Sort(a[4], a[5]); Sort(a[7], a[8]); Sort(a[0], a[3]); Sort(a[5], a[8]); Sort(a[4], a[7]); Sort(a[3], a[6]); Sort(a[1], a[4]); Sort(a[2], a[5]); Sort(a[4], a[7]); Sort(a[4], a[2]); Sort(a[6], a[4]); Sort(a[4], a[2]); idy = threadIdx.y + blockIdx.y * blockDim.y * 4 + 1; for (int z = 0; z &lt; 4; ++z) { if (idy &lt; H - 1) out[idy * W + idx] = (unsigned char)((a[4] &gt;&gt; (8 * (3 - z))) &amp; 255); idy += BL_Y; } } }</span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <p> この方法で最適化されたコードにより、コンパイラは既にロードされたデータを使用できます。 唯一の問題は、状態をチェックすることです（idy &lt;H-1）。 このチェックを削除するには、必要な行数を追加する必要があります。つまり、画像を垂直方向に4段揃えし、すべての追加要素を最大数（255）で埋める必要があります。 コードを3番目のオプションに変換すると、時間は次のようになります。 </p>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <table><tbody><tr><th colspan="5"> リードタイム、ミリ秒 </th><th colspan="3"> 相対加速度 </th></tr><tr><td> スカラーCPU </td><td>  AVX2 CPU </td><td>  Version1 GPU </td><td>  Version2 GPU </td><td>  Version2 GPU </td><td> スカラー/ AVX2 </td><td> スカラー/バージョン3 </td><td>  AVX2 /バージョン3 </td></tr><tr><td align="center">  24.814 </td><td align="center">  0.424 </td><td align="center">  0.372 </td><td align="center">  0.207 </td><td align="center">  0.130 </td><td align="center">  58.5 </td><td align="center">  190.8 </td><td align="center">  3.26 </td></tr></tbody></table>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <p> さらに、計算はそれほど多くないため、最適化することはすでに非常に困難です。 共有メモリの使用に関する問題は、ここでは対処しませんでした。 共有メモリを使用する試みがいくつかありましたが、最高の時間を得ることができませんでした。 画像処理速度をそのサイズに関連付けると、画像のサイズが揃っているかどうかに関係なく、約15ギガピクセル/秒を得ることができます。 </p>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h1>  GPUの5x5メディアンフィルターのコア </h1>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <p> すべての最適化を適用すると、わずかな変更を加えた5x5の正方形のフィルターを実装できます。 このコードの複雑さは、25個の要素に対する部分的なバイトニックソートの正しい実装にあります。 同様に、任意のサイズのフィルターを実装できます（ある種のフィルターサイズから開始すると、一般的な並べ替えアルゴリズムがおそらく高速になります）。 </p>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="java hljs"><span class="hljs-function"><span class="hljs-function">__global__ </span><span class="hljs-title"><span class="hljs-function"><span class="hljs-title">__launch_bounds__</span></span></span><span class="hljs-params"><span class="hljs-function"><span class="hljs-params">(</span></span><span class="hljs-number"><span class="hljs-function"><span class="hljs-params"><span class="hljs-number">256</span></span></span></span><span class="hljs-function"><span class="hljs-params">, </span></span><span class="hljs-number"><span class="hljs-function"><span class="hljs-params"><span class="hljs-number">8</span></span></span></span><span class="hljs-function"><span class="hljs-params">)</span></span></span><span class="hljs-function"> </span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-keyword">void</span></span></span><span class="hljs-function"> </span><span class="hljs-title"><span class="hljs-function"><span class="hljs-title">mFilter5a</span></span></span><span class="hljs-params"><span class="hljs-function"><span class="hljs-params">(</span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">const</span></span></span></span><span class="hljs-function"><span class="hljs-params"> </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">int</span></span></span></span><span class="hljs-function"><span class="hljs-params"> H, </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">const</span></span></span></span><span class="hljs-function"><span class="hljs-params"> </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">int</span></span></span></span><span class="hljs-function"><span class="hljs-params"> W, </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">const</span></span></span></span><span class="hljs-function"><span class="hljs-params"> unsigned </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">char</span></span></span></span><span class="hljs-function"><span class="hljs-params"> * in, unsigned </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">char</span></span></span></span><span class="hljs-function"><span class="hljs-params"> *out, </span></span><span class="hljs-keyword"><span class="hljs-function"><span class="hljs-params"><span class="hljs-keyword">const</span></span></span></span><span class="hljs-function"><span class="hljs-params"> unsigned stride_Y)</span></span></span><span class="hljs-function"> </span></span>{ <span class="hljs-keyword"><span class="hljs-keyword">int</span></span> idx = threadIdx.x + blockIdx.x * blockDim.x + <span class="hljs-number"><span class="hljs-number">2</span></span>; <span class="hljs-keyword"><span class="hljs-keyword">int</span></span> idy = <span class="hljs-number"><span class="hljs-number">4</span></span> * threadIdx.y + blockIdx.y * blockDim.y * <span class="hljs-number"><span class="hljs-number">4</span></span> + <span class="hljs-number"><span class="hljs-number">2</span></span>; <span class="hljs-keyword"><span class="hljs-keyword">if</span></span> (idx &lt; W - <span class="hljs-number"><span class="hljs-number">2</span></span>) { unsigned a[<span class="hljs-number"><span class="hljs-number">25</span></span>] = { <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span>, <span class="hljs-number"><span class="hljs-number">0</span></span> }; <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> (<span class="hljs-keyword"><span class="hljs-keyword">int</span></span> t = <span class="hljs-number"><span class="hljs-number">0</span></span>; t &lt; <span class="hljs-number"><span class="hljs-number">4</span></span>; ++t) { <span class="hljs-keyword"><span class="hljs-keyword">const</span></span> <span class="hljs-keyword"><span class="hljs-keyword">int</span></span> shift = <span class="hljs-number"><span class="hljs-number">8</span></span> * (<span class="hljs-number"><span class="hljs-number">3</span></span> - t); <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> (<span class="hljs-keyword"><span class="hljs-keyword">int</span></span> q = <span class="hljs-number"><span class="hljs-number">0</span></span>; q &lt; <span class="hljs-number"><span class="hljs-number">5</span></span>; ++q) <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> (<span class="hljs-keyword"><span class="hljs-keyword">int</span></span> z = <span class="hljs-number"><span class="hljs-number">0</span></span>; z &lt; <span class="hljs-number"><span class="hljs-number">5</span></span>; ++z) a[q * <span class="hljs-number"><span class="hljs-number">5</span></span> + z] |= (in[(idy - <span class="hljs-number"><span class="hljs-number">2</span></span> + q) * W + idx - <span class="hljs-number"><span class="hljs-number">2</span></span> + z] &lt;&lt; shift); idy++; } Sort(a[<span class="hljs-number"><span class="hljs-number">0</span></span>], a[<span class="hljs-number"><span class="hljs-number">1</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">3</span></span>], a[<span class="hljs-number"><span class="hljs-number">4</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">2</span></span>], a[<span class="hljs-number"><span class="hljs-number">4</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">2</span></span>], a[<span class="hljs-number"><span class="hljs-number">3</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">6</span></span>], a[<span class="hljs-number"><span class="hljs-number">7</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">5</span></span>], a[<span class="hljs-number"><span class="hljs-number">7</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">5</span></span>], a[<span class="hljs-number"><span class="hljs-number">6</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">9</span></span>], a[<span class="hljs-number"><span class="hljs-number">10</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">8</span></span>], a[<span class="hljs-number"><span class="hljs-number">10</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">8</span></span>], a[<span class="hljs-number"><span class="hljs-number">9</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">12</span></span>], a[<span class="hljs-number"><span class="hljs-number">13</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">11</span></span>], a[<span class="hljs-number"><span class="hljs-number">13</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">11</span></span>], a[<span class="hljs-number"><span class="hljs-number">12</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">15</span></span>], a[<span class="hljs-number"><span class="hljs-number">16</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">14</span></span>], a[<span class="hljs-number"><span class="hljs-number">16</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">14</span></span>], a[<span class="hljs-number"><span class="hljs-number">15</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">18</span></span>], a[<span class="hljs-number"><span class="hljs-number">19</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">17</span></span>], a[<span class="hljs-number"><span class="hljs-number">19</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">17</span></span>], a[<span class="hljs-number"><span class="hljs-number">18</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">21</span></span>], a[<span class="hljs-number"><span class="hljs-number">22</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">20</span></span>], a[<span class="hljs-number"><span class="hljs-number">22</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">20</span></span>], a[<span class="hljs-number"><span class="hljs-number">21</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">23</span></span>], a[<span class="hljs-number"><span class="hljs-number">24</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">2</span></span>], a[<span class="hljs-number"><span class="hljs-number">5</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">3</span></span>], a[<span class="hljs-number"><span class="hljs-number">6</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">0</span></span>], a[<span class="hljs-number"><span class="hljs-number">6</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">0</span></span>], a[<span class="hljs-number"><span class="hljs-number">3</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">4</span></span>], a[<span class="hljs-number"><span class="hljs-number">7</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">1</span></span>], a[<span class="hljs-number"><span class="hljs-number">7</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">1</span></span>], a[<span class="hljs-number"><span class="hljs-number">4</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">11</span></span>], a[<span class="hljs-number"><span class="hljs-number">14</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">8</span></span>], a[<span class="hljs-number"><span class="hljs-number">14</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">8</span></span>], a[<span class="hljs-number"><span class="hljs-number">11</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">12</span></span>], a[<span class="hljs-number"><span class="hljs-number">15</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">9</span></span>], a[<span class="hljs-number"><span class="hljs-number">15</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">9</span></span>], a[<span class="hljs-number"><span class="hljs-number">12</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">13</span></span>], a[<span class="hljs-number"><span class="hljs-number">16</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">10</span></span>], a[<span class="hljs-number"><span class="hljs-number">16</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">10</span></span>], a[<span class="hljs-number"><span class="hljs-number">13</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">20</span></span>], a[<span class="hljs-number"><span class="hljs-number">23</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">17</span></span>], a[<span class="hljs-number"><span class="hljs-number">23</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">17</span></span>], a[<span class="hljs-number"><span class="hljs-number">20</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">21</span></span>], a[<span class="hljs-number"><span class="hljs-number">24</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">18</span></span>], a[<span class="hljs-number"><span class="hljs-number">24</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">18</span></span>], a[<span class="hljs-number"><span class="hljs-number">21</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">19</span></span>], a[<span class="hljs-number"><span class="hljs-number">22</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">9</span></span>], a[<span class="hljs-number"><span class="hljs-number">18</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">0</span></span>], a[<span class="hljs-number"><span class="hljs-number">18</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">8</span></span>], a[<span class="hljs-number"><span class="hljs-number">17</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">0</span></span>], a[<span class="hljs-number"><span class="hljs-number">9</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">10</span></span>], a[<span class="hljs-number"><span class="hljs-number">19</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">1</span></span>], a[<span class="hljs-number"><span class="hljs-number">19</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">1</span></span>], a[<span class="hljs-number"><span class="hljs-number">10</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">11</span></span>], a[<span class="hljs-number"><span class="hljs-number">20</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">2</span></span>], a[<span class="hljs-number"><span class="hljs-number">20</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">12</span></span>], a[<span class="hljs-number"><span class="hljs-number">21</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">2</span></span>], a[<span class="hljs-number"><span class="hljs-number">11</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">3</span></span>], a[<span class="hljs-number"><span class="hljs-number">21</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">3</span></span>], a[<span class="hljs-number"><span class="hljs-number">12</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">13</span></span>], a[<span class="hljs-number"><span class="hljs-number">22</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">4</span></span>], a[<span class="hljs-number"><span class="hljs-number">22</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">4</span></span>], a[<span class="hljs-number"><span class="hljs-number">13</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">14</span></span>], a[<span class="hljs-number"><span class="hljs-number">23</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">5</span></span>], a[<span class="hljs-number"><span class="hljs-number">23</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">5</span></span>], a[<span class="hljs-number"><span class="hljs-number">14</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">15</span></span>], a[<span class="hljs-number"><span class="hljs-number">24</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">6</span></span>], a[<span class="hljs-number"><span class="hljs-number">24</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">6</span></span>], a[<span class="hljs-number"><span class="hljs-number">15</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">7</span></span>], a[<span class="hljs-number"><span class="hljs-number">16</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">7</span></span>], a[<span class="hljs-number"><span class="hljs-number">19</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">13</span></span>], a[<span class="hljs-number"><span class="hljs-number">21</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">15</span></span>], a[<span class="hljs-number"><span class="hljs-number">23</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">7</span></span>], a[<span class="hljs-number"><span class="hljs-number">13</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">7</span></span>], a[<span class="hljs-number"><span class="hljs-number">15</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">1</span></span>], a[<span class="hljs-number"><span class="hljs-number">9</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">3</span></span>], a[<span class="hljs-number"><span class="hljs-number">11</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">5</span></span>], a[<span class="hljs-number"><span class="hljs-number">17</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">11</span></span>], a[<span class="hljs-number"><span class="hljs-number">17</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">9</span></span>], a[<span class="hljs-number"><span class="hljs-number">17</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">4</span></span>], a[<span class="hljs-number"><span class="hljs-number">10</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">6</span></span>], a[<span class="hljs-number"><span class="hljs-number">12</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">7</span></span>], a[<span class="hljs-number"><span class="hljs-number">14</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">4</span></span>], a[<span class="hljs-number"><span class="hljs-number">6</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">4</span></span>], a[<span class="hljs-number"><span class="hljs-number">7</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">12</span></span>], a[<span class="hljs-number"><span class="hljs-number">14</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">10</span></span>], a[<span class="hljs-number"><span class="hljs-number">14</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">6</span></span>], a[<span class="hljs-number"><span class="hljs-number">7</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">10</span></span>], a[<span class="hljs-number"><span class="hljs-number">12</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">6</span></span>], a[<span class="hljs-number"><span class="hljs-number">10</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">6</span></span>], a[<span class="hljs-number"><span class="hljs-number">17</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">12</span></span>], a[<span class="hljs-number"><span class="hljs-number">17</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">7</span></span>], a[<span class="hljs-number"><span class="hljs-number">17</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">7</span></span>], a[<span class="hljs-number"><span class="hljs-number">10</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">12</span></span>], a[<span class="hljs-number"><span class="hljs-number">18</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">7</span></span>], a[<span class="hljs-number"><span class="hljs-number">12</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">10</span></span>], a[<span class="hljs-number"><span class="hljs-number">18</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">12</span></span>], a[<span class="hljs-number"><span class="hljs-number">20</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">10</span></span>], a[<span class="hljs-number"><span class="hljs-number">20</span></span>]); Sort(a[<span class="hljs-number"><span class="hljs-number">10</span></span>], a[<span class="hljs-number"><span class="hljs-number">12</span></span>]); idy = <span class="hljs-number"><span class="hljs-number">4</span></span> * threadIdx.y + blockIdx.y * blockDim.y * <span class="hljs-number"><span class="hljs-number">4</span></span> + <span class="hljs-number"><span class="hljs-number">2</span></span>; <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> (<span class="hljs-keyword"><span class="hljs-keyword">int</span></span> z = <span class="hljs-number"><span class="hljs-number">0</span></span>; z &lt; <span class="hljs-number"><span class="hljs-number">4</span></span>; ++z) { <span class="hljs-keyword"><span class="hljs-keyword">if</span></span> (idy &lt; H - <span class="hljs-number"><span class="hljs-number">2</span></span>) out[idy * W + idx] = (unsigned <span class="hljs-keyword"><span class="hljs-keyword">char</span></span>)((a[<span class="hljs-number"><span class="hljs-number">12</span></span>] &gt;&gt; (<span class="hljs-number"><span class="hljs-number">8</span></span> * (<span class="hljs-number"><span class="hljs-number">3</span></span> - z))) &amp; <span class="hljs-number"><span class="hljs-number">255</span></span>); idy++; } } }</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <p> このサイズのフィルターの処理速度はAVX2を使用すると約5.7倍速くなりますが、GPUバージョンは3.8倍（約0.5ミリ秒）だけ遅くなります。  5×5平方の中央値フィルタリングによるGPUでの最終的な加速は、AVX2バージョンと比較して5倍に達する可能性があります。 </p>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h1> おわりに </h1>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <p> 結論として、結果の一部を要約できます。 順次スカラープログラムを最適化することにより、GPUを使用して大きな加速を実現できます。 メジアンフィルターの場合、フィルターの半径に応じて、加速度値は1000倍に達する可能性があります。 もちろん、AVX2命令を使用した非常に最適なバージョンは、GPUとCPUの間のギャップを劇的に削減します。 しかし、個人的には、コードを手動でベクトル化することは実際に考えられるほど簡単ではないと結論づけることができます。 それどころか、GPUの最も「ネイティブ」な実装でさえ、かなり高い加速を提供します。 ほとんどの場合、これで十分です。 また、1つのマザーボードのグラフィックスカードの数が複数になる可能性があると考えると、画像またはビデオのフローの処理における全体的な加速が直線的に増加する可能性があります。 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      GPUを使用するかどうかの問題は修辞的なものです。 もちろん、画像とビデオを処理するタスクでは、GPUのパフォーマンスが向上し、計算負荷が増加すると、CPUとGPUの処理速度の差が大きくなり、後者の方が有利になります。 </p>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <p> 戦闘の最適化については、2番目の記事「 <a href="https://habrahabr.ru/post/308214/">Nvidia GPUのメディアンフィルタリングの高速または深層最適化」を</a>参照してください。 </p>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+    </div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+<section class="more-articles-navigation-panel js-more-articles-navigation-panel">
+<h4>More articles:</h4>
+<nav class="list-of-articles-container js-list-of-articles-container"><ul class="list-of-pages js-list-of-pages">
+<li><a href="../J305952/index.html">ユーザビリティテスト：ユーザーに関する真実を知りたいですか？</a></li>
+<li><a href="../J305954/index.html">FortiASICプロセッサの仕組み</a></li>
+<li><a href="../J305956/index.html">Yandex.Toloka。 マシンインテリジェンスのトレーニングを支援する方法</a></li>
+<li><a href="../J30596/index.html">払い戻し</a></li>
+<li><a href="../J305960/index.html">制御フローガード。 Adobe Flash Playerの例を使用した動作と回避策</a></li>
+<li><a href="../J305966/index.html">実践的な安全を教える：ポジティブテクノロジーズでの夏のインターンシップ</a></li>
+<li><a href="../J305968/index.html">DotNext 2016 Moscow .NET Conference、12月9日</a></li>
+<li><a href="../J30597/index.html">銀色</a></li>
+<li><a href="../J305970/index.html">イングランドからジュールヴェルヌの小説のヒーローたちがいる不思議な島へ</a></li>
+<li><a href="../J305974/index.html">IntelliJ IDEA Swing GUIウィザードの使用を開始する方法。 詳細な説明</a></li>
+</ul></nav>
+</section><br />
+<a href="../../allArticles.html"><strong>All Articles</strong></a>
+<script src="../../js/main.js"></script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript" >
+  (function (d, w, c) {
+      (w[c] = w[c] || []).push(function() {
+          try {
+              w.yaCounter70218013 = new Ya.Metrika({
+                  id:70218013,
+                  clickmap:true,
+                  trackLinks:true,
+                  accurateTrackBounce:true,
+                  webvisor:true
+              });
+          } catch(e) { }
+      });
+
+      var n = d.getElementsByTagName("script")[0],
+          s = d.createElement("script"),
+          f = function () { n.parentNode.insertBefore(s, n); };
+      s.type = "text/javascript";
+      s.async = true;
+      s.src = "https://mc.yandex.ru/metrika/watch.js";
+
+      if (w.opera == "[object Opera]") {
+          d.addEventListener("DOMContentLoaded", f, false);
+      } else { f(); }
+  })(document, window, "yandex_metrika_callbacks");
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/70218013" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+
+<!-- Google Analytics -->
+  <script>
+    window.ga = function () { ga.q.push(arguments) }; ga.q = []; ga.l = +new Date;
+    ga('create', 'G-FEDBM7F51Q', 'auto'); ga('send', 'pageview')
+  </script>
+  <script src="https://www.google-analytics.com/analytics.js" async defer></script>
+
+</section>
+
+<footer class="page-footer">
+  <div class="page-footer-legal-info-container page-footer-element">
+    <p>
+      Clever Geek | <span class="page-footer-legal-info-year js-page-footer-legal-info-year">2020</span>
+    </p>
+  </div>
+  <div class="page-footer-counters-container page-footer-element">
+    <div class="company-info js-company-info" itemscope="" itemtype="http://schema.org/Organization">
+      <span itemprop="name">Western Town Media (WTM)</span>
+      <div itemprop="address" itemscope="" itemtype="http://schema.org/PostalAddress">
+        <span itemprop="streetAddress">1968 Stoney Lonesome Road</span>
+        <br>
+        <span itemprop="postalCode">PA 18640</span>
+        <span itemprop="addressLocality">Pittston, USA</span>
+      </div>
+      <span itemprop="telephone">570-362-1316</span>
+    </div>
+    <script type="application/ld+json">
+      {
+        "@context": "http://schema.org",
+        "@type": "Organization",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Pittston, USA",
+          "postalCode": "PA 18640",
+          "streetAddress": "1968 Stoney Lonesome Road"
+        },
+        "name": "Western Town Media (WTM)",
+        "telephone": "570-362-1316"
+      }
+    </script>
+  </div>
+</footer>
+  
+</body>
+
+</html>
