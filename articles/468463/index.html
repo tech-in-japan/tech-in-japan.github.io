@@ -1,0 +1,2931 @@
+<!doctype html>
+<html class="no-js" lang="en">
+
+<head>
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-FEDBM7F51Q"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-FEDBM7F51Q');
+  </script>
+
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <title>🚗 🙇🏼 👨‍🔧 Improving Zabbix + PostgreSQL Performance with Partitioning and Indexing 👨🏾 💟 🍖</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <meta name="description" content="About a year ago, my colleagues and I were tasked with sorting out using the popular network infrastructure monitoring system - Zabbix. After studying...">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml"/>
+
+  <link rel="stylesheet" href="../../css/main.css">
+
+  <link href="https://fonts.googleapis.com/css?family=Quicksand&display=swap" rel="stylesheet">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+  <script>document.write('<script src="https://pagea' + 'd2.googles' + 'yndication.com/pagea' + 'd/js/a' + 'dsby' + 'google.js"><\/script>')</script>
+  <script>
+        var superSpecialObject = {};
+        superSpecialObject['google_a' + 'd_client'] = 'ca-p' + 'ub-6974184241884155';
+        superSpecialObject['enable_page_level_a' + 'ds'] = true;
+       (window['a' + 'dsbygoogle'] = window['a' + 'dsbygoogle'] || []).push(superSpecialObject);
+  </script>
+</head>
+
+<body>
+  <!--[if lte IE 9]>
+    <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience and security.</p>
+  <![endif]-->
+  <header class="page-header js-page-header">
+    <a class="page-header-logo-container" href="https://tech-in-japan.github.io/index.html"></a>
+    <div class="page-header-text">Clever Geek Handbook</div>
+  </header>
+  <section class="page js-page"><h1>Improving Zabbix + PostgreSQL Performance with Partitioning and Indexing</h1><div class="post__text post__text-html js-mediator-article">  About a year ago, my colleagues and I were tasked with sorting out using the popular network infrastructure monitoring system - Zabbix.  After studying the documentation, we immediately proceeded to load testing: we wanted to evaluate how many parameters Zabbix can work without noticeable performance drops.  Only PostgreSQL was used as the DBMS. 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      During the tests, some architectural features of the database layout and the behavior of the monitoring system itself were identified, which by default do not allow the monitoring system to reach its maximum power.  As a result, some optimization measures were developed, conducted, and tested mainly in terms of tuning the database. 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      I want to share the results of the work done in this article.  This article will be useful for both Zabbix and PostgreSQL DBA administrators, as well as for everyone who wants to better understand and understand the popular PosgreSQL DBMS. 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      A small spoiler: on a weak machine with a load of 200 thousand parameters per minute, we managed to reduce the CPU iowait from 20% to 2%, reduce the recording time in portions to primary tables by 250 times and to aggregated data tables by 32 times, reduce the size of indexes 5-10 times and accelerate the acquisition of historical samples in some cases up to 18 times. 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <a name="habracut"></a>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h4>  Stress Testing </h4>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Load testing was carried out according to the scheme: one Zabbix server, one active Zabbix proxy, two agents.  Each agent was configured to give 50 tons of integer and 50 tons of string parameters per minute (for a total of 200 agents, 200 tons of parameters per minute or 3333 parameters per second).  To generate agent parameters we used a <a href="https://github.com/monitoringartist/zabbix-server-stress-test">plug-in for Zabbix.</a> To check how many parameters an agent can generate, you need to use a <a href="https://github.com/monitoringartist/zabbix-agent-stress-test/">special script from the same plug-in author zabbix_module_stress</a> .  Zabbix web-admin has difficulties registering large templates, so we divided the parameters into 20 templates with 5 tons of parameters (2500 numeric and 2500 string). 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <div class="spoiler">  <b class="spoiler_title">Script generator template for load testing in python</b> <div class="spoiler_text"><pre><code class="python hljs"><span class="hljs-keyword"><span class="hljs-keyword">import</span></span> argparse <span class="hljs-string"><span class="hljs-string">"""     .   20   5000    ( 2500  :  echo,  ;  ping,  ) """</span></span> TEMP_HEAD = <span class="hljs-string"><span class="hljs-string">""" &lt;?xml version="1.0" encoding="UTF-8"?&gt; &lt;zabbix_export&gt; &lt;version&gt;2.0&lt;/version&gt; &lt;date&gt;2015-08-17T23:15:01Z&lt;/date&gt; &lt;groups&gt; &lt;group&gt; &lt;name&gt;Templates&lt;/name&gt; &lt;/group&gt; &lt;/groups&gt; &lt;templates&gt; &lt;template&gt; &lt;template&gt;Template Zabbix Srv Stress {count} passive {char}&lt;/template&gt; &lt;name&gt;Template Zabbix Srv Stress {count} passive {char}&lt;/name&gt; &lt;description/&gt; &lt;groups&gt; &lt;group&gt; &lt;name&gt;Templates&lt;/name&gt; &lt;/group&gt; &lt;/groups&gt; &lt;applications/&gt; &lt;items&gt; """</span></span> TEMP_END = <span class="hljs-string"><span class="hljs-string">"""&lt;/items&gt; &lt;discovery_rules/&gt; &lt;macros/&gt; &lt;templates/&gt; &lt;screens/&gt; &lt;/template&gt; &lt;/templates&gt; &lt;/zabbix_export&gt; """</span></span> TEMP_ITEM = <span class="hljs-string"><span class="hljs-string">"""&lt;item&gt; &lt;name&gt;{k}&lt;/name&gt; &lt;type&gt;0&lt;/type&gt; &lt;snmp_community/&gt; &lt;multiplier&gt;0&lt;/multiplier&gt; &lt;snmp_oid/&gt; &lt;key&gt;{k}&lt;/key&gt; &lt;delay&gt;1m&lt;/delay&gt; &lt;history&gt;3&lt;/history&gt; &lt;trends&gt;365&lt;/trends&gt; &lt;status&gt;0&lt;/status&gt; &lt;value_type&gt;{t}&lt;/value_type&gt; &lt;allowed_hosts/&gt; &lt;units/&gt; &lt;delta&gt;0&lt;/delta&gt; &lt;snmpv3_contextname/&gt; &lt;snmpv3_securityname/&gt; &lt;snmpv3_securitylevel&gt;0&lt;/snmpv3_securitylevel&gt; &lt;snmpv3_authprotocol&gt;0&lt;/snmpv3_authprotocol&gt; &lt;snmpv3_authpassphrase/&gt; &lt;snmpv3_privprotocol&gt;0&lt;/snmpv3_privprotocol&gt; &lt;snmpv3_privpassphrase/&gt; &lt;formula&gt;1&lt;/formula&gt; &lt;delay_flex/&gt; &lt;params/&gt; &lt;ipmi_sensor/&gt; &lt;data_type&gt;0&lt;/data_type&gt; &lt;authtype&gt;0&lt;/authtype&gt; &lt;username/&gt; &lt;password/&gt; &lt;publickey/&gt; &lt;privatekey/&gt; &lt;port/&gt; &lt;description/&gt; &lt;inventory_link&gt;0&lt;/inventory_link&gt; &lt;applications/&gt; &lt;valuemap/&gt; &lt;logtimefmt/&gt; &lt;/item&gt; """</span></span> TMP_FNAME_DEFAULT = <span class="hljs-string"><span class="hljs-string">"Template_App_Zabbix_Server_Stress_{count}_passive_{char}.xml"</span></span> chars = <span class="hljs-string"><span class="hljs-string">"ABCDEFGHIJKLMNOPQRSTUVWXYZ"</span></span> <span class="hljs-keyword"><span class="hljs-keyword">if</span></span> __name__ == <span class="hljs-string"><span class="hljs-string">"__main__"</span></span>: parser = argparse.ArgumentParser( description=<span class="hljs-string"><span class="hljs-string">'     zabbix'</span></span>) parser.add_argument(<span class="hljs-string"><span class="hljs-string">'--items'</span></span>, dest=<span class="hljs-string"><span class="hljs-string">'items'</span></span>, type=int, default=<span class="hljs-number"><span class="hljs-number">1000</span></span>, help=<span class="hljs-string"><span class="hljs-string">'-   (default: 1000)'</span></span>) parser.add_argument(<span class="hljs-string"><span class="hljs-string">'--templates'</span></span>, dest=<span class="hljs-string"><span class="hljs-string">'templates'</span></span>, type=int, default=<span class="hljs-number"><span class="hljs-number">1</span></span>, help=<span class="hljs-string"><span class="hljs-string">f'-  [1-</span><span class="hljs-subst"><span class="hljs-string"><span class="hljs-subst">{len(chars)}</span></span></span><span class="hljs-string">] (default: 1)'</span></span>) args = parser.parse_args() items_count = args.items tmps_count = args.templates <span class="hljs-keyword"><span class="hljs-keyword">if</span></span> <span class="hljs-keyword"><span class="hljs-keyword">not</span></span> (tmps_count &gt;= <span class="hljs-number"><span class="hljs-number">1</span></span> <span class="hljs-keyword"><span class="hljs-keyword">and</span></span> tmps_count &lt;= len(chars)): sys.exit(<span class="hljs-string"><span class="hljs-string">f"Templates must be in range 1 - </span><span class="hljs-subst"><span class="hljs-string"><span class="hljs-subst">{len(chars)}</span></span></span><span class="hljs-string">"</span></span>) <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> i <span class="hljs-keyword"><span class="hljs-keyword">in</span></span> range(tmps_count): fname = TMP_FNAME_DEFAULT.format(count=items_count, char=chars[i]) <span class="hljs-keyword"><span class="hljs-keyword">with</span></span> open(fname, <span class="hljs-string"><span class="hljs-string">"w"</span></span>) <span class="hljs-keyword"><span class="hljs-keyword">as</span></span> output: output.write(TEMP_HEAD.format(count=items_count, char=chars[i])) <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> k,t <span class="hljs-keyword"><span class="hljs-keyword">in</span></span> [(<span class="hljs-string"><span class="hljs-string">'stress.ping[{}-I-{:06d}]'</span></span>,<span class="hljs-number"><span class="hljs-number">3</span></span>), (<span class="hljs-string"><span class="hljs-string">'stress.echo[{}-S-{:06d}]'</span></span>,<span class="hljs-number"><span class="hljs-number">4</span></span>)]: <span class="hljs-keyword"><span class="hljs-keyword">for</span></span> j <span class="hljs-keyword"><span class="hljs-keyword">in</span></span> range(int(items_count/<span class="hljs-number"><span class="hljs-number">2</span></span>)): output.write(TEMP_ITEM.format(k=k.format(chars[i],j),t=t)) output.write(TEMP_END)</code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    </div></div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      The cpu iostat metric is a good indicator of Zabbix performance - it reflects the fraction of the unit of time during which the processor expects access to the disk.  The higher it is, the more the disk is occupied with read and write operations, which indirectly affects the performance degradation of the monitoring system as a whole.  Those.  this is a sure sign that something is wrong with the monitoring.  By the way, on the open spaces of the network, the quite popular question is “how to remove the iostat trigger in Zabbix”, so this is a painful topic, because there are many reasons for increasing the value of the iowait metric. 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Here's what picture for the cpu iowait metric we got three days later initially: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/webt/dc/md/yo/dcmdyote_ghzxca-o9sft88ptxq.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      But what picture for the same metric we also got within three days in the end after all the optimization measures that have been done, which will be discussed below: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/webt/do/cs/fc/docsfcjjczkhgxoubjayslrohuw.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      As can be seen from the graphs, the cpu iowait indicator fell from almost 20% to 2%, which indirectly accelerated the execution time of all requests for adding and reading data.  Now let's see why, with standard database settings, the overall performance of the monitoring system drops and how to fix it. 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h4>  Reasons for Zabbix Performance Drop </h4>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      With the accumulation of more than 10 million parameter values ​​in each table of primary data, it was noticed that the performance of the monitoring system drops sharply, due to the following reasons: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li>  the iowait metric for the server CPU is increased by more than 20%, which indicates an increase in the time during which the CPU expects access to disk read and write operations </li><li>  indexes of tables in which monitoring data are greatly inflated </li><li>  the utilization metric is increased to 100% for a disk with monitoring data, which indicates that the disk is fully loaded with read and write operations </li><li>  obsolete values ​​do not have time to be deleted from the history tables when cleaning according to the schedule of housekeeper </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      The situation is aggravated at the beginning of each hour, when in addition to this, aggregated hourly statistics are calculated - at the same time, active reading and writing of index pages from disk, deletion of outdated data from the history is performed, which leads to the same result - a drop in database performance and an increase in execution time requests (in the limit, a request lasting up to 5 minutes was noted!). 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      A little help on organizing a monitoring data warehouse in Zabbix.  It stores primary data and aggregated data in different tables, moreover, with the separation of the types of parameters.  Each table stores an itemid field (an implicit reference to a registered data item in the system), a timestamp for registering the clock value in unix timestamp format (milliseconds in a separate column) and a value in a separate column (the exception is the log table, it has more fields - it’s like an event log ): 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <div class="scrollable-table"><table><tbody><tr><th>  Table name </th><th>  Appointment </th><th>  Data type </th></tr><tr><td>  history </td><td>  Primary Monitoring Data </td><td>  numeric (16.4) </td></tr><tr><td>  history_uint </td><td>  Primary Monitoring Data </td><td>  numeric (20.0) </td></tr><tr><td>  history_str </td><td>  Primary Monitoring Data </td><td>  varchar (255) </td></tr><tr><td>  history_text </td><td>  Primary Monitoring Data </td><td>  text </td></tr><tr><td>  history_logs </td><td>  Primary Monitoring Data </td><td>  text and int fields </td></tr><tr><td>  trends </td><td>  Aggregated Monitoring Data </td><td>  numeric (16.4) </td></tr><tr><td>  trends_uint </td><td>  Aggregated Monitoring Data </td><td>  numeric (20.0) </td></tr></tbody></table></div><h4>  Optimization Activities </h4>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      To improve the performance of the PostgreSQL database, various optimization measures were carried out, the main of which are partitioning and changing indexes.  However, it is worth mentioning a few words about a few important and useful measures that can speed up the work of any database under the PostgreSQL database management system. 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <b>Important notice.</b>  At the time of collecting the material of the article, we used Zabbix version 4.0, although version 4.2 has already been released and version 4.4 is being prepared for release.  Why is it important to mention this?  Because starting from version 4.2, Zabbix began to support a special powerful extension for working with TimescaleDB time series, but so far in experimental mode: for all the advantages of using this extension, it is believed that some requests began to work more slowly and there are still unsolved performance problems (there will be resolved in version 4.4) - <a href="https://habr.com/ru/company/zabbix/blog/458530/">read this article</a> .  <i>In the next article I plan to write about the results of load testing already using the TimescaleDB extension in comparison with this solution case.</i>  The version of PostgreSQL was used 10, but all the information given is relevant for versions 11 and 12 (we are waiting!). 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Therefore, first things first: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li>  setting up a configuration file using pgtune utility </li><li>  putting the database to a separate physical disk </li><li>  partitioning history tables with pg_pathman </li><li>  changing index types of history tables to brin (clock) and btree-gin (itemid) </li><li>  collection and analysis of query execution statistics pg_stat_statements </li><li>  setting physical disk monitoring parameters </li><li>  hardware performance improvement </li><li>  creation of a distributed cluster (material beyond the scope of this article) </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h4>  Configuring a configuration file using pgtune utility </h4>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      In fact, PostgreSQL is a fairly lightweight DBMS.  Its default configuration file is configured so that, as my colleague says, “even work on the coffee machine”, i.e.  on a very modest iron.  Therefore, it is necessary to configure PostgreSQL for the server configuration, taking into account the amount of memory, the number of processors, the type of intended use of the database, the type of disk (HDD or SSD) and the number of connections. 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Alas, there is no single formula for tuning all DBMSs, but there are certain rules and patterns that are suitable for most configurations (finer tuning is already the work of an expert).  To simplify the life of DBA, the <a href="https://github.com/gregs1104/pgtunel">pgtune</a> utility was written, which was supplemented by the <a href="https://pgtune.leopard.in.ua/">web version</a> by <a href="https://habr.com/ru/users/le0pard/" class="user_link">le0pard</a> , the author of an interesting and useful book on PostgreSQL administration. 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      An example of running the utility in the console with 100 connections (Zabbix has a demanding Web admin) for the “Data warehouses” application type: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre>  pgtune -i postgresql.conf -o new_postgresql.conf -T DW -c 100 </pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <div class="spoiler">  <b class="spoiler_title">The configuration parameters that the pgtune utility changes with a description of the purpose (values ​​are given as an example)</b> <div class="spoiler_text"><pre> # DB Version: 11
+ # OS Type: linux
+ # DB Type: web
+ # Total Memory (RAM): 8 GB
+ # CPUs num: 1
+ # Connections num: 100
+ # Data Storage: hdd<font></font>
+<font></font>
+ max_connections = 100 # maximum number of simultaneous database connections
+ shared_buffers = 2GB # memory size for various buffers (mainly cache of table blocks and indexes) in shared memory
+ effective_cache_size = 6GB # maximum size of required memory for query execution using indexes
+ maintenance_work_mem = 512MB # affects the speed of operations VACUUM, ANALYZE, CREATE INDEX
+ checkpoint_completion_target = 0.7 # target time to complete the checkpoint procedure
+ wal_buffers = 16MB # amount of memory used by Shared Memory to maintain transaction logs
+ default_statistics_target = 100 # amount of statistics collected by the ANALYZE command - when increasing, the optimizer builds queries more slowly, but better
+ random_page_cost = 4 # conditional cost of index access to data pages - affects the decision to use the index
+ effective_io_concurrency = 2 # number of asynchronous I / O operations that the DBMS will try to perform in a separate session
+ work_mem = 10485kB # amount of memory used for sorting and hash tables before temporary files on disk are used
+ min_wal_size = 1GB # limits below the number of WAL files that will be recycled for future use
+ max_wal_size = 2GB # limits the number of WAL files that will be recycled for future use </pre></div></div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <div class="spoiler">  <b class="spoiler_title">Some useful postgresql configuration options</b> <div class="spoiler_text"><pre> # managing concurrent request handlers
+ max_worker_processes = 8 # maximum number of background processes - at least one per database
+ max_parallel_workers_per_gather = 4 # maximum number of parallel processes within a single request
+ max_parallel_workers = 8 # the maximum number of work processes that the system can support for parallel operations<font></font>
+<font></font>
+ # logging settings (an easy way to find out about the execution time of requests without using the pg_stat_statements extension)
+ log_min_duration_statement = 3000 # write to the logs the duration of the execution of all commands whose operating time&gt; = of the specified value in ms
+ log_duration = off # record the duration of each completed command
+ log_statement = 'none' # which SQL commands to write to the log, values: none (disabled), ddl, mod and all (all commands)
+ debug_print_plan = off # output of the query plan tree for further analysis<font></font>
+<font></font>
+ # squeeze the maximum out of the database and be ready to receive it for any failure (for the most repressed, who ignore the existence of ssd and a distributed cluster)
+ #fsync = off # physical write to the changes disk, disabling fsync gives a speed gain, but can lead to permanent failures
+ #synchronous_commit = off # allows you to respond to the client even before the transaction information is in the WAL - an almost safe alternative to disabling fsync
+ #full_page_writes = off # shutdown speeds up normal operations, but can lead to data corruption or data corruption if the system crashes </pre></div></div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h4>  Listing a database on a separate physical disk </h4>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <i>This item is optional and is rather a transitional decision on the way to a fully-fledged distributed cluster, but it will be useful to know about this possibility.</i>  To speed up the database, you can put it on a separate disk.  We mounted the entire disk in the base directory, where all PostgreSQL databases are stored, but in general it can be done differently: create a new tablesbase and transfer the database (or even only part of it - the tables of primary and aggregated monitoring data) to this tablesbase on a separate disk. 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <div class="spoiler">  <b class="spoiler_title">Mount example</b> <div class="spoiler_text">  First you need to format the disk with the ext4 file system and connect it to the server.  Mount the disk for the database with the noatime label: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre>  mount / dev / sdc1 / var / lib / pgsql / 10 / data / base -o noatime </pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      For permanent mounting, add the line to the / etc / fstab file: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> # where UUID is the identifier of the disk, you can see it using the blkid utility
+ UUID = 121efe29-70bf-410b-bc71-90704568ce3b / var / lib / pgsql / 10 / data / base ext4 defaults, noatime 0 0 </pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    </div></div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h4>  Partitioning history tables with pg_pathman </h4>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      One of the problems that we encountered during stress testing of Zabbix - PostgreSQL does not manage to delete obsolete data from the database.  With the help of partitioning, you can divide the table into its constituent parts, thereby reducing the size of the indexes and constituent parts of the supertable, which positively affects the speed of the database as a whole. 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Partitioning solves two problems at once: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      1. accelerate the removal of obsolete data by deleting entire tables 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      2. splitting indices for each composite table 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      There are four mechanisms for partitioning in PostgreSQL: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      1.standard constraint_exclusion 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      2. extension pg_partman ( <i>do not confuse with pg_pathman</i> ) 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      3. extension <a href="https://github.com/postgrespro/pg_pathman">pg_pathman</a> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      4. manually create and maintain partitions by ourselves 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      The most convenient, reliable and optimized partitioning solution, in our opinion, is the <a href="https://github.com/postgrespro/pg_pathman">pg_pathman</a> extension.  With this partitioning method, the query planner flexibly determines in which partitions to search for data.  <i>Rumor has it that in the 12th version of PostgreSQL there will be an excellent partition already out of the box.</i> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Thus, we began to write monitoring data for each day in a separate inherited table from the super table and the removal of obsolete parameter values ​​began to occur through the removal of all obsolete tables at once, which is much easier for a DBMS by labor costs.  Deletion was done by calling the user-defined function of the database as a monitoring parameter of the Zabbix server at 2 a.m. with an indication of the permissible range of statistics storage. 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <div class="spoiler">  <b class="spoiler_title">Install and configure partitioning for PostgreSQL 10</b> <div class="spoiler_text">  Install and configure the <a href="https://github.com/postgrespro/pg_pathman">pg_pathman</a> extension from the standard OS repository (for instructions on building the latest version of the extension from the sources, look in the same repository on github): 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> yum install pg_pathman10
+ nano /var/pgsqldb/postgresql.conf
+ shared_preload_libraries = 'pg_pathman' # important - here write pg_pathman last in the list
+</pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      We reboot the DBMS, create the extension for the database and configure the partitioning (1 day for the primary monitoring data and 3 days for the aggregated monitoring data - it could be done for 1 day): 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> systemctl restart postgresql-10.service
+ psql -d zabbix -U postgres
+ CREATE EXTENSION pg_pathman;
+ # configure one day for the tables of primary monitoring data
+ # 1552424400 - countdown as unix timestamp, 86400 - seconds in days
+ select create_range_partitions ('history', 'clock', 1552424400, 86400);
+ select create_range_partitions ('history_uint', 'clock', 1552424400, 86400);
+ select create_range_partitions ('history_text', 'clock', 1552424400, 86400);
+ select create_range_partitions ('history_str', 'clock', 1552424400, 86400);
+ select create_range_partitions ('history_log', 'clock', 1552424400, 86400);
+ # configure for three days for aggregated monitoring data tables
+ # 1552424400 - countdown as unix timestamp, 259200 - seconds in three days
+ select create_range_partitions ('trends', 'clock', 1545771600, 259200);  
+ select create_range_partitions ('trends_uint', 'clock', 1545771600, 259200); 
+</pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <i>If there is no data in any of the tables yet, then when calling the create_range_partitions function, one more additional argument p_count = 0_ must be passed.</i> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Useful queries for monitoring and managing partitions: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> # general list of partitioned tables, main configuration storage:
+ select * from pathman_config;
+ # representation with all existing sections, as well as their parents and range boundaries:
+ select * from pathman_partition_list;
+ # additional parameters that override the standard pg_pathman behavior:
+ select * from pathman_config_params;
+ # copy the contents back to the parent table and delete partitions:
+ select drop_partitions ('table_name' :: regclass, false);
+</pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Useful script for viewing statistics on the number and size of partitions: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="sql hljs"><span class="hljs-comment"><span class="hljs-comment">/*       */</span></span> <span class="hljs-keyword"><span class="hljs-keyword">SELECT</span></span> nspname <span class="hljs-keyword"><span class="hljs-keyword">AS</span></span> schemaname, relname, relkind, <span class="hljs-keyword"><span class="hljs-keyword">cast</span></span> (reltuples <span class="hljs-keyword"><span class="hljs-keyword">as</span></span> <span class="hljs-built_in"><span class="hljs-built_in">int</span></span>), pg_size_pretty(pg_relation_size(C.oid)) <span class="hljs-keyword"><span class="hljs-keyword">AS</span></span> <span class="hljs-string"><span class="hljs-string">"size"</span></span> <span class="hljs-keyword"><span class="hljs-keyword">FROM</span></span> pg_class C <span class="hljs-keyword"><span class="hljs-keyword">LEFT</span></span> <span class="hljs-keyword"><span class="hljs-keyword">JOIN</span></span> pg_namespace N <span class="hljs-keyword"><span class="hljs-keyword">ON</span></span> (N.oid = C.relnamespace) <span class="hljs-keyword"><span class="hljs-keyword">WHERE</span></span> nspname <span class="hljs-keyword"><span class="hljs-keyword">NOT</span></span> <span class="hljs-keyword"><span class="hljs-keyword">IN</span></span> (<span class="hljs-string"><span class="hljs-string">'pg_catalog'</span></span>, <span class="hljs-string"><span class="hljs-string">'information_schema'</span></span>) <span class="hljs-keyword"><span class="hljs-keyword">and</span></span> (relname <span class="hljs-keyword"><span class="hljs-keyword">like</span></span> <span class="hljs-string"><span class="hljs-string">'history%'</span></span> <span class="hljs-keyword"><span class="hljs-keyword">or</span></span> relname <span class="hljs-keyword"><span class="hljs-keyword">like</span></span> <span class="hljs-string"><span class="hljs-string">'trends%'</span></span>) <span class="hljs-keyword"><span class="hljs-keyword">and</span></span> relkind = <span class="hljs-string"><span class="hljs-string">'r'</span></span> <span class="hljs-comment"><span class="hljs-comment">-- and reltuples &gt; 0 -- and pg_relation_size(C.oid) &gt;= 0 ORDER BY schemaname, relname</span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> </div></div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <div class="spoiler">  <b class="spoiler_title">Auto-configuration of deleting obsolete partitions (ahtung - a big SQL function)</b> <div class="spoiler_text">  To configure auto-deletion of partitions, you need to create a function in the database 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      (wide text, so I had to remove the syntax highlighting): 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> CREATE OR REPLACE FUNCTION public.delete_old_partitions (history_days integer, trends_days integer, str_days integer)
+  RETURNS text
+  LANGUAGE plpgsql
+ AS $ function $
+ / *
+ The function deletes all partitions older than the specified number of days:
+ history_days - for partitions history_x, history_uint_x
+ trends_days - for partitions trends_x, trends_uint_x
+ str_days - for partitions history_str_x, history_text_x, history_log_x
+ * /
+ declare clock_today_start int;
+ declare clock_delete_less_history int = 0;
+ declare clock_delete_less_trends int = 0;
+ declare clock_delete_less_strings int = 0;
+ clock_delete_less int = 0;
+ declare iterator int = 0;
+ declare result_str text = '';
+ declare buf_table_size text;
+ declare buf_table_len text;
+ declare partition_name text;
+ declare clock_max text;
+ declare err_detail text;
+ declare t_start timestamp = clock_timestamp ();
+ declare t_end timestamp;
+ begin
+     if $ 1 &lt;= 0 then return 'ups, something wrong: history_days argument must be positive integer value';  end if;
+     if $ 2 &lt;= 0 then return 'ups, something wrong: trends_days argument must be positive integer value';  end if;
+     if $ 3 &lt;= 0 then return 'ups, something wrong: str_days argument must be positive integer value';  end if;
+     clock_today_start = extract (epoch from date_trunc ('day', now ())) :: int;
+     clock_delete_less_history = extract (epoch from date_trunc ('day', now ()) - ($ 1 :: text || 'days') :: interval) :: int;
+     clock_delete_less_trends = extract (epoch from date_trunc ('day', now ()) - ($ 2 :: text || 'days') :: interval) :: int;
+     clock_delete_less_strings = extract (epoch from date_trunc ('day', now ()) - ($ 3 :: text || 'days') :: interval) :: int;
+     clock_delete_less = least (clock_delete_less_history, clock_delete_less_trends, clock_delete_less_strings);
+     --raise notice 'clock_today_start% (%)', to_timestamp (clock_today_start), clock_today_start;
+     --raise notice 'clock_delete_less_history% (%)% days', to_timestamp (clock_delete_less_history), clock_delete_less_history, $ 1;
+     --raise notice 'clock_delete_less_trends% (%)% days', to_timestamp (clock_delete_less_trends), clock_delete_less_trends, $ 2;
+     --raise notice 'clock_delete_less_strings% (%)% days', to_timestamp (clock_delete_less_strings), clock_delete_less_strings, $ 3;
+     for partition_name, clock_max in select partition, range_max from pathman_partition_list where 
+     range_max :: int &lt;= greatest (clock_delete_less_history, clock_delete_less_trends, clock_delete_less_strings) and 
+     (partition :: text like 'history%' or partition :: text like 'trends%') order by partition asc
+     loop
+         if (partition_name ~ 'history_uint_ \ d' and clock_max :: int &lt;= clock_delete_less_history)
+         or (partition_name ~ 'history_ \ d' and clock_max :: int &lt;= clock_delete_less_history)
+         or (partition_name ~ 'trends_ \ d' and clock_max :: int &lt;= clock_delete_less_trends)
+         or (partition_name ~ 'history_log_ \ d' and clock_max :: int &lt;= clock_delete_less_strings)
+         or (partition_name ~ 'history_str_ \ d' and clock_max :: int &lt;= clock_delete_less_strings)
+         or (partition_name ~ 'history_text_ \ d' and clock_max :: int &lt;= clock_delete_less_strings)
+         then 
+             iterator = iterator + 1;
+             raise notice '%', format ('!!! delete% s% s', partition_name, clock_max);
+             select max (reltuples :: int), pg_size_pretty (sum (pg_relation_size (pg_class.oid))) as "size" from pg_class where relname like partition_name ||  '%' into strict buf_table_len, buf_table_size;
+             if result_str! = '' then result_str = result_str ||  ',';  end if;
+             result_str = result_str ||  format ('% s (dt &lt;% s, len% s,% s)', partition_name, to_char (to_timestamp (clock_max :: int), 'YYYY-MM-DD'), buf_table_len, buf_table_size);
+             execute format ('drop table if exists% s', partition_name);
+         end if;
+     end loop;
+     if iterator = 0 then result_str = format ('there is no partitions to delete older, then% s date', to_char (to_timestamp (clock_delete_less), 'YYYY-MM-DD')); 
+     else result_str = format ('deleted% s partitions in% s seconds:', iterator, trunc (extract (seconds from (clock_timestamp () - t_start)) :: numeric, 3)) ||  result_str;
+     end if;
+     --raise notice '%', result_str;
+     return result_str;
+ exception when others then
+    get stacked diagnostics err_detail = PG_EXCEPTION_CONTEXT;
+    return format ('ups, something wrong:% s [err code% s],% s', sqlerrm, sqlstate, err_detail);
+ end; 
+ $ function $;
+</pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      To automatically call the auto-clean partition function, you need to create one data item for the zabbix server host of the "Database Monitor" type with the following settings: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> - type: database monitor
+ - name: delete_old_history_partitions
+ - key: db.odbc.select [delete_old_history_partitions, zabbix]
+ - sql expression: select delete_old_partitions (3, 30, 30);
+ # here, the parameters for calling the delete_old_partitions function indicate the storage time in days 
+ # for numeric values, aggregated numeric values ​​and string values
+ - data type: Text
+ - update interval: 0
+ - user interval: scheduled in h2
+ - history storage period: 90 days
+ - data element group: Database
+</pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      As a result, we will obtain statistics on partitions cleansing of approximately this type: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre>  2019-09-16 02:00:00, deleted 3 partitions in 0.024 seconds: trends_78 (dt &lt;2019-08-17, len 1, 48 kB), history_193 (dt &lt;2019-09-13, len 85343, 9448 kB ), history_uint_186 (dt &lt;2019-09-13, len 27969, 3480 kB)
+</pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <b>Important!</b>  After setting up automatic deletion of partitions via the data element and user function, you need to turn off history and trend cleaning in the Zabbix housekeeper task scheduler: <i>through the zabbix menu item, select “Administration” -&gt; “General” -&gt; select “Clear history” from the list in the corner -&gt; disable all checkboxes in the sections “History” and “Dynamics of changes”.</i> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    </div></div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h4>  Changing index types of history tables to brin (clock) and btree-gin (itemid) </h4>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Special thanks to <a href="https://habr.com/ru/users/erogov/" class="user_link">erogov</a> for the <a href="https://habr.com/ru/company/postgrespro/blog/326096/">excellent series of overview articles on PostgreSQL indexes</a> .  <i>And indeed the entire PostgresPRO team.</i><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">Impressed by these articles, we played around with different types of indexes on the monitoring data tables and came to the conclusion which types of indexes on which fields will give the maximum performance boost. </font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <font style="vertical-align: inherit;"><font style="vertical-align: inherit;">It was noticed that the composite index btree (itemid, clock) is created by default on all tables of monitoring data - it is fast for searching, especially for monotonously ordered values, but it “swells” on the disk when there is a lot of data - more than 10 million. </font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     <i><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">On the tables By default hourly aggregated statistics, a unique index is generally created, although these tables for data storage and uniqueness are provided here at the application server level, and a unique index only slows down data insertion.</font></font></i> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <font style="vertical-align: inherit;"><font style="vertical-align: inherit;">During testing of various indices, the most successful combination of indices was revealed: the brin index on the clock field and the btree-gin index on the itemid field for all tables of monitoring data. </font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     <i><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">The brin index is ideal for monotonically increasing data, such as the timestamp of the fact of an event, i.e. </font><font style="vertical-align: inherit;">for time series. </font><font style="vertical-align: inherit;">And the btree-gin index is essentially a gin index over standard data types, which is generally much faster than the classic btree index because </font><font style="vertical-align: inherit;">gin index is not rebuilt during the addition of new values, but only supplemented by them. </font></font></i><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">The btree-gin index is put as an extension to PostgreSQL.</font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <font style="vertical-align: inherit;"><font style="vertical-align: inherit;">A comparison of the sampling speed for this indexing strategy and for indexes in the Zabbix database by default is given below. </font><font style="vertical-align: inherit;">During stress tests, we accumulated data for three days for three partitions:</font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <div class="scrollable-table"><table><tbody><tr><th><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> Partition Name </font></font></th><th><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> The number of rows in the MLN </font></font></th><th><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> Size in MB </font></font></th></tr><tr><td><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> history_uint_1 </font></font></td><td><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> 81.3 </font></font></td><td><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> 4119 </font></font></td></tr><tr><td><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> history_uint_2 </font></font></td><td><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> 74.9 </font></font></td><td><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> 4426 </font></font></td></tr><tr><td><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> history_uint_3 </font></font></td><td>  100.7 </td><td>  5387 </td></tr></tbody></table></div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> To evaluate the results, three types of queries were performed: </font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ol><li><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> for one specific parameter itemid data for the last month, in fact the last three days (total 1660 records) </font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">explain analyze select * from history_uint where itemid = 313300</font></font><font></font><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">
+and clock&gt; = extract (epoch from '2019-03-09 00:00:00' :: timestamp) :: int</font></font><font></font><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">
+and clock &lt;= extract (epoch from '2019-04-09 12:00:00' :: timestamp) :: int;</font></font><font></font>
+</pre></li><li><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> for one specific parameter data for 12 hours of one day (649 entries in total) </font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">explain analyze select * from history_text where itemid = 310650</font></font><font></font><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">
+and clock&gt; = extract (epoch from '2019-04-09 00:00:00' :: timestamp) :: int</font></font><font></font><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">
+and clock &lt;= extract (epoch from '2019-04-09 12:00:00' :: timestamp) :: int;</font></font><font></font>
+</pre></li><li><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> for one specific parameter data for one hour (61 records in total): </font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">explain analyze select count (*) from history_text where itemid = 336540</font></font><font></font><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">
+and clock&gt; = extract (epoch from '2019-04-08 11:00:00' :: timestamp) :: int</font></font><font></font><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">
+and clock &lt;= extract (epoch from '2019-04-08 12:00:00' :: timestamp) :: int;</font></font><font></font>
+</pre></li></ol>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> The test results were tabulated below: </font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <div class="scrollable-table"><table><tbody><tr><th><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> index type </font></font></th><th><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> size in MB * </font></font></th><th><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> request 1 ** in ms </font></font></th><th><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> request 2 ** in ms </font></font></th><th><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> request 3 ** in ms </font></font></th></tr><tr><td><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> btree (clock, itemid) </font></font></td><td><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> 14741 </font></font></td><td><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> 7154.3 </font></font></td><td><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> 2205.3 </font></font></td><td><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> 1860.4 </font></font></td></tr><tr><td><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">brin (clock), </font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <font style="vertical-align: inherit;"><font style="vertical-align: inherit;">btree-gin (itemid)</font></font></td><td><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> 0.42 and 1329 </font></font></td><td><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> 2958.2 </font></font></td><td><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> 1820.4 </font></font></td><td><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> 102.1 </font></font></td></tr></tbody></table></div><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">* the size in MB is indicated in total for three partitions </font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <font style="vertical-align: inherit;"><font style="vertical-align: inherit;">** type 1 request - data for 3 days, type 2 request - data for 12 hours, type 3 request - data for one hour </font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <font style="vertical-align: inherit;"><font style="vertical-align: inherit;">From the comparison table it can be seen that for large data tables with the number of records more than 100 million, it is clearly seen that changing the standard composite index btree to two indices brin and btree-gin has a beneficial effect on reducing the size of indexes and speeding up query execution time. </font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <font style="vertical-align: inherit;"><font style="vertical-align: inherit;">The effectiveness of indexing and partitioning is shown below on the example of a request to add new records to the history_uint and trends_uint tables (additions occur on average 2000 values ​​per query).</font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <div class="scrollable-table"><table><tbody><tr><th>  Table </th><th><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> Average request time to improvements, ms </font></font></th><th><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> Average request time after improvements, ms </font></font></th></tr><tr><td><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> trends_uint </font></font></td><td><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> 2201.48 </font></font></td><td><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> 8.72 </font></font></td></tr><tr><td><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> trends_uint </font></font></td><td><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> 1997.27 </font></font></td><td><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> 62.16 </font></font></td></tr></tbody></table></div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <font style="vertical-align: inherit;"><font style="vertical-align: inherit;">Summarizing the results of tests of various index configurations for zabbix system monitoring data tables, we can say that a similar change in the standard index for zabbix system monitoring data tables positively affects the overall system performance, which is most felt when data volumes are accumulated in the amount of 10 million or more. you should forget about the indirect effect of "swelling" of the standard btree index by default - frequent rebuilds of the multi-gigabyte index leads to heavy load of the hard disk (utiliz metric ation), which ultimately increases the time of disk operations and the latency of access to the disk by the CPU (iowait metric). </font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+     <b><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">But,</font></font></b><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> so that the btree-gin index can work with the bigint (in8) data type, which is the itemid column, you need to register a family of bigint operators for the btree-gin index. </font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <div class="spoiler"> <b class="spoiler_title"><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">Register a bigint operator family for the btree-gin index</font></font></b> <div class="spoiler_text"><pre><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">/ *</font></font><font></font>
+     gin    biginteger  integer    .<font></font>
+ -   gin     int2, int4, int8,<font></font>
+       bigint     ,     bigint (&lt;= 2147483647)<font></font>
+        intger_ops,  :<font></font>
+create index on tablename using gin(columnname int8_family_ops) with (fastupdate = false);<font></font>
+ * /<font></font>
+<font></font>
+--       btree_gin<font></font>
+CREATE EXTENSION btree_gin;<font></font>
+<font></font>
+CREATE OPERATOR FAMILY integer_ops using gin;<font></font>
+<font></font>
+CREATE OPERATOR CLASS int4_family_ops<font></font>
+FOR TYPE int4 USING gin FAMILY integer_ops<font></font>
+AS<font></font>
+    OPERATOR 1 &lt;,<font></font>
+    OPERATOR 2 &lt;=,<font></font>
+    OPERATOR 3 =,<font></font>
+    OPERATOR 4 &gt;=,<font></font>
+    OPERATOR 5 &gt;,<font></font>
+    FUNCTION 1 btint4cmp(int4,int4),<font></font>
+    FUNCTION 2 gin_extract_value_int4(int4, internal),<font></font>
+    FUNCTION 3 gin_extract_query_int4(int4, internal, int2, internal, internal),<font></font>
+    FUNCTION 4 gin_btree_consistent(internal, int2, anyelement, int4, internal, internal),<font></font>
+    FUNCTION 5 gin_compare_prefix_int4(int4,int4,int2, internal),<font></font>
+STORAGE int4;<font></font>
+<font></font>
+CREATE OPERATOR CLASS int8_family_ops<font></font>
+FOR TYPE int8 USING gin FAMILY integer_ops<font></font>
+AS<font></font>
+    OPERATOR 1 &lt;,<font></font>
+    OPERATOR 2 &lt;=,<font></font>
+    OPERATOR 3 =,<font></font>
+    OPERATOR 4 &gt;=,<font></font>
+    OPERATOR 5 &gt;,<font></font>
+    FUNCTION 1 btint8cmp(int8,int8),<font></font>
+    FUNCTION 2 gin_extract_value_int8(int8, internal),<font></font>
+    FUNCTION 3 gin_extract_query_int8(int8, internal, int2, internal, internal),<font></font>
+    FUNCTION 4 gin_btree_consistent(internal, int2, anyelement, int4, internal, internal),<font></font>
+    FUNCTION 5 gin_compare_prefix_int8(int8,int8,int2, internal),<font></font>
+STORAGE int8;<font></font>
+<font></font>
+ALTER OPERATOR FAMILY integer_ops USING gin add<font></font>
+  OPERATOR 1 &lt;(int4,int8),<font></font>
+  OPERATOR 2 &lt;=(int4,int8),<font></font>
+  OPERATOR 3 =(int4,int8),<font></font>
+  OPERATOR 4 &gt;=(int4,int8),<font></font>
+  OPERATOR 5 &gt;(int4,int8);<font></font>
+<font></font>
+ALTER OPERATOR FAMILY integer_ops USING gin add<font></font>
+  OPERATOR 1 &lt;(int8,int4),<font></font>
+  OPERATOR 2 &lt;=(int8,int4),<font></font>
+  OPERATOR 3 =(int8,int4),<font></font>
+  OPERATOR 4 &gt;=(int8,int4),<font></font>
+  OPERATOR 5 &gt;(int8,int4);<font></font>
+</pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    </div></div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <div class="spoiler"> <b class="spoiler_title"><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">This script redistributes all indexes in the PostgreSQL database for Zabbix from the default configuration to the optimal configuration described above.</font></font></b> <div class="spoiler_text"><pre>/*<font></font>
+        <font></font>
+ * /<font></font>
+<font></font>
+--   <font></font>
+drop index history_1;<font></font>
+drop index history_uint_1;<font></font>
+drop index history_str_1;<font></font>
+drop index history_text_1;<font></font>
+drop index history_log_1;<font></font>
+--          PK <font></font>
+-- (   ,         )<font></font>
+alter table trends drop constraint trends_pk;<font></font>
+alter table trends_uint drop constraint trends_uint_pk;<font></font>
+<font></font>
+--     bree-gin   itemid    <font></font>
+--   btree-gin  bigint       <font></font>
+-- https://habr.com/ru/company/postgrespro/blog/340978/#comment_10545932<font></font>
+--    create extension btree_gin;<font></font>
+create index on history using gin(itemid int8_family_ops) with (fastupdate = false);<font></font>
+create index on history_uint using gin(itemid int8_family_ops) with (fastupdate = false);<font></font>
+create index on history_str using gin(itemid int8_family_ops) with (fastupdate = false);<font></font>
+create index on history_text using gin(itemid int8_family_ops) with (fastupdate = false);<font></font>
+create index on history_log using gin(itemid int8_family_ops) with (fastupdate = false);<font></font>
+create index on trends using gin(itemid int8_family_ops) with (fastupdate = false);<font></font>
+create index on trends_uint using gin(itemid int8_family_ops) with (fastupdate = false);<font></font>
+<font></font>
+--     bree-gin   itemid    <font></font>
+--     brin    128 ,    <font></font>
+--           ,<font></font>
+--      https://habr.com/ru/company/postgrespro/blog/346460/<font></font>
+create index on history using brin(clock) with (pages_per_range = 128);<font></font>
+create index on history_uint using brin(clock) with (pages_per_range = 128);<font></font>
+create index on history_str using brin(clock) with (pages_per_range = 128);<font></font>
+create index on history_text using brin(clock) with (pages_per_range = 128);<font></font>
+create index on history_log using brin(clock) with (pages_per_range = 128);<font></font>
+create index on trends using brin(clock) with (pages_per_range = 128);<font></font>
+create index on trends_uint using brin(clock) with (pages_per_range = 128);<font></font>
+</pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    </div></div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <font style="vertical-align: inherit;"><font style="vertical-align: inherit;">For the brin index for our data volume at an intensity of 100 tons of parameters per minute (100 tons in history and 100 tons in history_uint), it was noticed that on the tables of primary monitoring data, the index works twice as fast with a zone size of 512 pages than with the standard size of 128 pages, but this is individual and depends on the size of the tables and server configuration. In any case, the brin index takes up very little space, but its speed can be slightly increased by fine-tuning the size of the zone, but provided that the data flow rate does not change much.</font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <font style="vertical-align: inherit;"><font style="vertical-align: inherit;">As a result, it is worth noting that there is a limitation associated with the architecture of Zabbix itself: on the tab “Recent data”, the last two values ​​for each parameter are collected taking into account filtering. For each parameter, values ​​are requested in the database separately. Therefore, the more such parameters are selected, the longer the query will run. The most recent data is searched when the btree index (itemid, clock desc) is set on history tables with reverse sorting by time, but at the same time, the index itself of course “swells” on the disk and generally indirectly slows down the database, which causes a problem, described above. </font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <font style="vertical-align: inherit;"><font style="vertical-align: inherit;">Therefore, there are three ways out:</font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ol><li>             « »      100  (..   ,     « »    ) </li><li>     Zabbix ,                  ,          « » </li><li><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> leave the indexes as they are by default, and limit ourselves to partitioning only to get quite large selections on the Recent Data tab at the same time for a variety of parameters (however, it was noticed that the Zabbix web server still has a limit on the number of simultaneously displayed parameter values on the tab “Recent data” - so, when trying to display 5000 values, the database calculated the result, but the server could not prepare a web page and display such a large amount of data). </font></font></li></ol>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h4><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> Collection and analysis of query execution statistics pg_stat_statements </font></font></h4>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <font style="vertical-align: inherit;"><font style="vertical-align: inherit;">Pg_stat_statements is an extension for collecting statistics on query performance across the entire server. </font><font style="vertical-align: inherit;">The advantage of this extension is that it does not need to collect and parse PostgreSQL logs.</font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <div class="spoiler"> <b class="spoiler_title"><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">Using the pg_stat_statements Extension</font></font></b> <div class="spoiler_text">    psql: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> CREATE EXTENSION pg_stat_statements; </pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+           postgresql.conf: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre>shared_preload_libraries = 'pg_stat_statements'<font></font>
+pg_stat_statements.max = 10000 #   sql ,     (     );<font></font>
+pg_stat_statements.track = all # all -   (    ), top -   /, none -  <font></font>
+pg_stat_statements.save = true #     <font></font>
+</pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      : 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> SELECT pg_stat_statements_reset(); </pre>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+              : 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <pre> <code class="sql hljs"><span class="hljs-keyword"><span class="hljs-keyword">select</span></span> <span class="hljs-keyword"><span class="hljs-keyword">substring</span></span>(<span class="hljs-keyword"><span class="hljs-keyword">query</span></span> <span class="hljs-keyword"><span class="hljs-keyword">from</span></span> <span class="hljs-string"><span class="hljs-string">'[^(]*'</span></span>) <span class="hljs-keyword"><span class="hljs-keyword">as</span></span> query_sub, <span class="hljs-keyword"><span class="hljs-keyword">sum</span></span>(calls) <span class="hljs-keyword"><span class="hljs-keyword">as</span></span> calls, <span class="hljs-keyword"><span class="hljs-keyword">avg</span></span>(mean_time) <span class="hljs-keyword"><span class="hljs-keyword">as</span></span> mean_time <span class="hljs-keyword"><span class="hljs-keyword">from</span></span> pg_stat_statements <span class="hljs-keyword"><span class="hljs-keyword">where</span></span> <span class="hljs-keyword"><span class="hljs-keyword">query</span></span> ~ <span class="hljs-string"><span class="hljs-string">'insert into'</span></span> <span class="hljs-keyword"><span class="hljs-keyword">or</span></span> <span class="hljs-keyword"><span class="hljs-keyword">query</span></span> ~ <span class="hljs-string"><span class="hljs-string">'update trends'</span></span> <span class="hljs-keyword"><span class="hljs-keyword">group</span></span> <span class="hljs-keyword"><span class="hljs-keyword">by</span></span> <span class="hljs-keyword"><span class="hljs-keyword">substring</span></span>(<span class="hljs-keyword"><span class="hljs-keyword">query</span></span> <span class="hljs-keyword"><span class="hljs-keyword">from</span></span> <span class="hljs-string"><span class="hljs-string">'[^(]*'</span></span>) <span class="hljs-keyword"><span class="hljs-keyword">order</span></span> <span class="hljs-keyword"><span class="hljs-keyword">by</span></span> calls <span class="hljs-keyword"><span class="hljs-keyword">desc</span></span></code>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+     </pre> </div></div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h4>      </h4>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <font style="vertical-align: inherit;"><font style="vertical-align: inherit;">To monitor hard drives in Zabbix, only the vfs.dev.read and vfs.dev.write parameters are provided out of the box. These options do not provide information about disk utilization. Useful criteria for finding problems with the performance of your hard drives are utilization factor, await query time, and disk load queue load. </font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <font style="vertical-align: inherit;"><font style="vertical-align: inherit;">As a rule, high disk load correlates with high iowait of cpu itself and with an increase in the execution time of sql queries, which was found during load testing of a zabbix server with a standard configuration without partitioning and without setting up alternative indexes. You can add these monitoring parameters for hard drives using the following steps, which were peeped in an </font></font><a href="https://habr.com/ru/post/220073/"><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">article</font></font></a><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> from a friend</font></font><a href="https://habr.com/ru/users/lesovsky/" class="user_link"><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">lesovsky</font></font></a><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> and improved: now iostat parameters are collected separately for each disk into a json temporary parameter, from where, according to the post-processing settings, they are already decomposed into the final monitoring parameters. </font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <font style="vertical-align: inherit;"><font style="vertical-align: inherit;">While the Pull request is pending, you can try to deploy monitoring of disk parameters according to the </font></font><a href="https://github.com/vikingUnet/zabbix-extensions/tree/master/files/iostat"><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">detailed instructions through my fork</font></font></a><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> . </font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <font style="vertical-align: inherit;"><font style="vertical-align: inherit;">After all the described actions, you can add a custom graph with iowait cpu and utiliztion parameters for the system disk and the disk from the database (if they are different) to the main Zabbix server monitoring panel. </font><font style="vertical-align: inherit;">The result may look like this (sda is the main disk, sdc is the disk with the database):</font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/webt/oa/nj/fa/oanjfa3hajssftbq22dk8njiwj0.png">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h4><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> Hardware Performance Improvement </font></font></h4>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <font style="vertical-align: inherit;"><font style="vertical-align: inherit;">After setting up the DBMS, indexing and partitioning, you can proceed to vertical scaling - to improve the hardware characteristics of the server: add RAM, change drives to solid-state and add processor cores. </font><font style="vertical-align: inherit;">This is a guaranteed performance increase, but it is better to do this only after software optimization.</font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <h4><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> Creating a Distributed Cluster </font></font></h4>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <font style="vertical-align: inherit;"><font style="vertical-align: inherit;">After moderate vertical scaling, you need to start horizontal - create a distributed cluster: either shard or replicate the master slave. </font><font style="vertical-align: inherit;">But this is a separate topic and material of a separate article </font></font><s><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">(how to mold a cluster of shit and sticks)</font></font></s><font style="vertical-align: inherit;"><font style="vertical-align: inherit;"> , as well as a comparison of the above described Zabbix database optimization technique using pg_pathman and indexing with the method of applying the TimescaleDB extension. </font></font>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <font style="vertical-align: inherit;"><font style="vertical-align: inherit;">In the meantime, one can only hope that the material in this article turned out to be useful and informative!</font></font></div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+<section class="more-articles-navigation-panel js-more-articles-navigation-panel">
+<h4>More articles:</h4>
+<nav class="list-of-articles-container js-list-of-articles-container"><ul class="list-of-pages js-list-of-pages">
+<li><a href="../468447/index.html">Laragon - WAMP with automatic local domains</a></li>
+<li><a href="../468453/index.html">MBLT19 :: reports, product battle and test</a></li>
+<li><a href="../468455/index.html">Great GPS and its dark side</a></li>
+<li><a href="../468457/index.html">The generator of simple arithmetic examples for dummies and not only</a></li>
+<li><a href="../468459/index.html">Signature radar detector overview: our flagship Playme Silent 2</a></li>
+<li><a href="../468465/index.html">Attorney's view: how can IT companies terminate a contract with a toxic government customer</a></li>
+<li><a href="../468471/index.html">Overview of AngularConnect 2019. Part 1</a></li>
+<li><a href="../468479/index.html">“People think that free is worthless. It seemed to me that I could convince them ”- Yuri Yartsev about Russol school</a></li>
+<li><a href="../468481/index.html">How S7 was the first in Russia to sell airline tickets online</a></li>
+<li><a href="../468485/index.html">When you want a beautiful GUI, but no gpu</a></li>
+</ul></nav>
+</section><br />
+<a href="../../allArticles.html"><strong>All Articles</strong></a>
+<script src="../../js/main.js"></script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript" >
+  (function (d, w, c) {
+      (w[c] = w[c] || []).push(function() {
+          try {
+              w.yaCounter70218013 = new Ya.Metrika({
+                  id:70218013,
+                  clickmap:true,
+                  trackLinks:true,
+                  accurateTrackBounce:true,
+                  webvisor:true
+              });
+          } catch(e) { }
+      });
+
+      var n = d.getElementsByTagName("script")[0],
+          s = d.createElement("script"),
+          f = function () { n.parentNode.insertBefore(s, n); };
+      s.type = "text/javascript";
+      s.async = true;
+      s.src = "https://mc.yandex.ru/metrika/watch.js";
+
+      if (w.opera == "[object Opera]") {
+          d.addEventListener("DOMContentLoaded", f, false);
+      } else { f(); }
+  })(document, window, "yandex_metrika_callbacks");
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/70218013" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+
+<!-- Google Analytics -->
+  <script>
+    window.ga = function () { ga.q.push(arguments) }; ga.q = []; ga.l = +new Date;
+    ga('create', 'G-FEDBM7F51Q', 'auto'); ga('send', 'pageview')
+  </script>
+  <script src="https://www.google-analytics.com/analytics.js" async defer></script>
+
+</section>
+
+<footer class="page-footer">
+  <div class="page-footer-legal-info-container page-footer-element">
+    <p>
+      Clever Geek | <span class="page-footer-legal-info-year js-page-footer-legal-info-year">2020</span>
+    </p>
+  </div>
+  <div class="page-footer-counters-container page-footer-element">
+    <div class="company-info js-company-info" itemscope="" itemtype="http://schema.org/Organization">
+      <span itemprop="name">Western Town Media (WTM)</span>
+      <div itemprop="address" itemscope="" itemtype="http://schema.org/PostalAddress">
+        <span itemprop="streetAddress">1968 Stoney Lonesome Road</span>
+        <br>
+        <span itemprop="postalCode">PA 18640</span>
+        <span itemprop="addressLocality">Pittston, USA</span>
+      </div>
+      <span itemprop="telephone">570-362-1316</span>
+    </div>
+    <script type="application/ld+json">
+      {
+        "@context": "http://schema.org",
+        "@type": "Organization",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Pittston, USA",
+          "postalCode": "PA 18640",
+          "streetAddress": "1968 Stoney Lonesome Road"
+        },
+        "name": "Western Town Media (WTM)",
+        "telephone": "570-362-1316"
+      }
+    </script>
+  </div>
+</footer>
+  
+</body>
+
+</html>

@@ -1,0 +1,1478 @@
+<!doctype html>
+<html class="no-js" lang="en">
+
+<head>
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-FEDBM7F51Q"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-FEDBM7F51Q');
+  </script>
+
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <title>📔 🐑 🤲 Inside The JeMalloc. Core Data Structures: Pairing Heap & Bitmap Tree 🤵🏼 👩🏼‍🎤 👶🏿</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <meta name="description" content="The topic of Allocators often pops up on the Internet: indeed, an allocator is a kind of cornerstone, the heart of any application. In this series of ...">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml"/>
+
+  <link rel="stylesheet" href="../../css/main.css">
+
+  <link href="https://fonts.googleapis.com/css?family=Quicksand&display=swap" rel="stylesheet">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+  <script>document.write('<script src="https://pagea' + 'd2.googles' + 'yndication.com/pagea' + 'd/js/a' + 'dsby' + 'google.js"><\/script>')</script>
+  <script>
+        var superSpecialObject = {};
+        superSpecialObject['google_a' + 'd_client'] = 'ca-p' + 'ub-6974184241884155';
+        superSpecialObject['enable_page_level_a' + 'ds'] = true;
+       (window['a' + 'dsbygoogle'] = window['a' + 'dsbygoogle'] || []).push(superSpecialObject);
+  </script>
+</head>
+
+<body>
+  <!--[if lte IE 9]>
+    <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience and security.</p>
+  <![endif]-->
+  <header class="page-header js-page-header">
+    <a class="page-header-logo-container" href="https://tech-in-japan.github.io/index.html"></a>
+    <div class="page-header-text">Clever Geek Handbook</div>
+  </header>
+  <section class="page js-page"><h1>Inside The JeMalloc. Core Data Structures: Pairing Heap & Bitmap Tree</h1><div class="post__text post__text-html js-mediator-article"><img src="https://habrastorage.org/webt/mg/et/eh/mgeteheplu9ypws0y8c22pt-hwa.jpeg" alt="image">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      The topic of Allocators often pops up on the Internet: indeed, an allocator is a kind of cornerstone, the heart of any application.  In this series of posts I want to talk in detail about one very entertaining and eminent allocator - <b>JeMalloc</b> , supported and developed by Facebook and used, for example, in <b>bionic [Android] lib C.</b> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      On the network, I could not find any details that fully reveal the soul of this allocator, which ultimately affected the impossibility of making any conclusions about the applicability of JeMalloc in solving a particular problem.  There was a lot of material and, in order to read it was not tiring, I suggest starting with the basics: The Basic Data Structures used in JeMalloc. 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Under the cat, I’m talking about <b>Pairing Heap</b> and <b>Bitmap Tree</b> , which form the foundation of JeMalloc.  At this stage, I do not touch on the topic of <b>multithreading</b> and <b>Fine Grained Locking</b> , however, continuing the series of posts, I will definitely tell you about these things, for the sake of which, in fact, various kinds of Exotics are created, in particular the one described below. 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <a name="habracut"></a>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <b>Bitmap_s</b> is a tree-like data structure that allows you to: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li>  Quickly find the first set / unset bit in a given bit sequence. </li><li>  Change and get the value of a bit with index <b>i</b> in a given sequence of bits. </li><li>  The tree is built according to a sequence of <b>n</b> bits and has the following properties: </li><li>  The base unit of the tree is the node, and the base unit of the node is the bit.  Each node consists of exactly <b>k</b> bits.  The bitness of a node is selected so that the logical operations on a selected range of bits are calculated as quickly and efficiently as possible on a given computer.  In JeMalloc, a node is represented by an <i>unsigned long</i> type. </li><li>  The height of the tree is measured in levels and for a sequence of n bits is H = <math></math><span class="MathJax_Preview" style="color: inherit; display: none;"></span><span class="MathJax_SVG" id="MathJax-Element-1-Frame" tabindex="0" style="font-size: 100%; display: inline-block; position: relative;" data-mathml="<math xmlns=&quot;http://www.w3.org/1998/Math/MathML&quot;><mtext>&amp;#xA0;</mtext><mi>l</mi><mi>o</mi><msub><mi>g</mi><mrow class=&quot;MJX-TeXAtom-ORD&quot;><mi>k</mi></mrow></msub><mrow class=&quot;MJX-TeXAtom-ORD&quot;><mi>n</mi></mrow><mi>l</mi><mi>o</mi><mi>g</mi><mi>k</mi><mo stretchy=&quot;false&quot;>(</mo><mi>n</mi><mo stretchy=&quot;false&quot;>)</mo></math>" role="presentation"><svg xmlns:xlink="http://www.w3.org/1999/xlink" width="13.346ex" height="2.66ex" viewBox="0 -832 5746.3 1145.2" role="img" focusable="false" style="vertical-align: -0.728ex;" aria-hidden="true"><g stroke="currentColor" fill="currentColor" stroke-width="0" transform="matrix(1 0 0 -1 0 0)"><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6C" x="250" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6F" x="548" y="0"></use><g transform="translate(1034,0)"><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-67" x="0" y="0"></use><use transform="scale(0.707)" xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6B" x="675" y="-213"></use></g><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6E" x="1980" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6C" x="2580" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6F" x="2879" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-67" x="3364" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6B" x="3845" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMAIN-28" x="4366" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6E" x="4756" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMAIN-29" x="5356" y="0"></use></g></svg><span class="MJX_Assistive_MathML" role="presentation"><math xmlns="http://www.w3.org/1998/Math/MathML"><mtext>&nbsp;</mtext><mi>l</mi><mi>o</mi><msub><mi>g</mi><mrow class="MJX-TeXAtom-ORD"><mi>k</mi></mrow></msub><mrow class="MJX-TeXAtom-ORD"><mi>n</mi></mrow><mi>l</mi><mi>o</mi><mi>g</mi><mi>k</mi><mo stretchy="false">(</mo><mi>n</mi><mo stretchy="false">)</mo></math></span></span><script type="math/tex" id="MathJax-Element-1"> \ log_ {k} {n} log k (n) </script>  levels. </li><li>  Each level of the tree is represented by a sequence of <math></math><span class="MathJax_Preview" style="color: inherit; display: none;"></span><span class="MathJax_SVG" id="MathJax-Element-2-Frame" tabindex="0" style="font-size: 100%; display: inline-block; position: relative;" data-mathml="<math xmlns=&quot;http://www.w3.org/1998/Math/MathML&quot;><mi>c</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>t</mi><mi>O</mi><mi>f</mi><mi>N</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>s</mi><mi>O</mi><mi>n</mi><mi>L</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>l</mi><mo>=</mo><mi>i</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>g</mi><mi>e</mi><mi>r</mi><mi>C</mi><mi>e</mi><mi>i</mi><mi>l</mi><mo stretchy=&quot;false&quot;>(</mo><mtext>&amp;#xA0;</mtext><mi>f</mi><mi>r</mi><mi>a</mi><mi>c</mi><mrow class=&quot;MJX-TeXAtom-ORD&quot;><mi>n</mi></mrow><mrow class=&quot;MJX-TeXAtom-ORD&quot;><msup><mrow class=&quot;MJX-TeXAtom-ORD&quot;><mi>k</mi></mrow><mrow class=&quot;MJX-TeXAtom-ORD&quot;><mi>H</mi><mo>&amp;#x2212;</mo><mi>c</mi><mi>u</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>l</mi><mo>+</mo><mn>1</mn></mrow></msup></mrow><mo stretchy=&quot;false&quot;>)</mo></math>" role="presentation"><svg xmlns:xlink="http://www.w3.org/1999/xlink" width="62.933ex" height="3.021ex" viewBox="0 -987.6 27096.2 1300.8" role="img" focusable="false" style="vertical-align: -0.728ex;" aria-hidden="true"><g stroke="currentColor" fill="currentColor" stroke-width="0" transform="matrix(1 0 0 -1 0 0)"><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-63" x="0" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6F" x="433" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-75" x="919" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6E" x="1491" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-74" x="2092" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-4F" x="2453" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-66" x="3217" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-4E" x="3767" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6F" x="4656" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-64" x="5141" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-65" x="5665" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-73" x="6131" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-4F" x="6601" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6E" x="7364" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-4C" x="7965" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-65" x="8646" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-76" x="9113" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-65" x="9598" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6C" x="10065" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMAIN-3D" x="10641" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-69" x="11697" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6E" x="12043" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-74" x="12643" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-65" x="13005" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-67" x="13471" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-65" x="13952" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-72" x="14418" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-43" x="14870" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-65" x="15630" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-69" x="16097" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6C" x="16442" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMAIN-28" x="16741" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-66" x="17380" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-72" x="17931" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-61" x="18382" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-63" x="18912" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6E" x="19345" y="0"></use><g transform="translate(19946,0)"><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6B" x="0" y="0"></use><g transform="translate(521,421)"><use transform="scale(0.707)" xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-48" x="0" y="0"></use><use transform="scale(0.707)" xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMAIN-2212" x="888" y="0"></use><use transform="scale(0.707)" xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-63" x="1667" y="0"></use><use transform="scale(0.707)" xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-75" x="2100" y="0"></use><use transform="scale(0.707)" xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-72" x="2673" y="0"></use><use transform="scale(0.707)" xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-72" x="3124" y="0"></use><use transform="scale(0.707)" xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-65" x="3576" y="0"></use><use transform="scale(0.707)" xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6E" x="4042" y="0"></use><use transform="scale(0.707)" xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-74" x="4643" y="0"></use><use transform="scale(0.707)" xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-4C" x="5004" y="0"></use><use transform="scale(0.707)" xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-65" x="5686" y="0"></use><use transform="scale(0.707)" xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-76" x="6152" y="0"></use><use transform="scale(0.707)" xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-65" x="6638" y="0"></use><use transform="scale(0.707)" xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6C" x="7104" y="0"></use><use transform="scale(0.707)" xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMAIN-2B" x="7403" y="0"></use><use transform="scale(0.707)" xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMAIN-31" x="8181" y="0"></use></g></g><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMAIN-29" x="26706" y="0"></use></g></svg><span class="MJX_Assistive_MathML" role="presentation"><math xmlns="http://www.w3.org/1998/Math/MathML"><mi>c</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>t</mi><mi>O</mi><mi>f</mi><mi>N</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>s</mi><mi>O</mi><mi>n</mi><mi>L</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>l</mi><mo>=</mo><mi>i</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>g</mi><mi>e</mi><mi>r</mi><mi>C</mi><mi>e</mi><mi>i</mi><mi>l</mi><mo stretchy="false">(</mo><mtext>&nbsp;</mtext><mi>f</mi><mi>r</mi><mi>a</mi><mi>c</mi><mrow class="MJX-TeXAtom-ORD"><mi>n</mi></mrow><mrow class="MJX-TeXAtom-ORD"><msup><mrow class="MJX-TeXAtom-ORD"><mi>k</mi></mrow><mrow class="MJX-TeXAtom-ORD"><mi>H</mi><mo>−</mo><mi>c</mi><mi>u</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>l</mi><mo>+</mo><mn>1</mn></mrow></msup></mrow><mo stretchy="false">)</mo></math></span></span><script type="math/tex" id="MathJax-Element-2"> countOfNodesOnLevel = integerCeil (\ frac {n} {{k} ^ {H - currentLevel + 1}}) </script>  nodes, which is equivalent to a sequence of <math></math><span class="MathJax_Preview" style="color: inherit; display: none;"></span><span class="MathJax_SVG" id="MathJax-Element-3-Frame" tabindex="0" style="font-size: 100%; display: inline-block; position: relative;" data-mathml="<math xmlns=&quot;http://www.w3.org/1998/Math/MathML&quot;><mi>c</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>t</mi><mi>O</mi><mi>f</mi><mi>B</mi><mi>i</mi><mi>t</mi><mi>s</mi><mi>O</mi><mi>n</mi><mi>L</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>l</mi><mo>=</mo><mi>c</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>t</mi><mi>O</mi><mi>f</mi><mi>N</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>s</mi><mi>O</mi><mi>n</mi><mi>L</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>l</mi><mo>&amp;#x2217;</mo><mi>k</mi></math>" role="presentation"><svg xmlns:xlink="http://www.w3.org/1999/xlink" width="52.56ex" height="2.419ex" viewBox="0 -780.1 22630 1041.5" role="img" focusable="false" style="vertical-align: -0.607ex;" aria-hidden="true"><g stroke="currentColor" fill="currentColor" stroke-width="0" transform="matrix(1 0 0 -1 0 0)"><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-63" x="0" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6F" x="433" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-75" x="919" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6E" x="1491" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-74" x="2092" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-4F" x="2453" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-66" x="3217" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-42" x="3767" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-69" x="4527" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-74" x="4872" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-73" x="5234" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-4F" x="5703" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6E" x="6467" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-4C" x="7067" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-65" x="7749" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-76" x="8215" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-65" x="8701" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6C" x="9167" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMAIN-3D" x="9743" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-63" x="10800" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6F" x="11233" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-75" x="11719" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6E" x="12291" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-74" x="12892" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-4F" x="13253" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-66" x="14017" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-4E" x="14567" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6F" x="15456" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-64" x="15941" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-65" x="16465" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-73" x="16931" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-4F" x="17401" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6E" x="18164" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-4C" x="18765" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-65" x="19446" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-76" x="19913" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-65" x="20398" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6C" x="20865" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMAIN-2217" x="21385" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6B" x="22108" y="0"></use></g></svg><span class="MJX_Assistive_MathML" role="presentation"><math xmlns="http://www.w3.org/1998/Math/MathML"><mi>c</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>t</mi><mi>O</mi><mi>f</mi><mi>B</mi><mi>i</mi><mi>t</mi><mi>s</mi><mi>O</mi><mi>n</mi><mi>L</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>l</mi><mo>=</mo><mi>c</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>t</mi><mi>O</mi><mi>f</mi><mi>N</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>s</mi><mi>O</mi><mi>n</mi><mi>L</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>l</mi><mo>∗</mo><mi>k</mi></math></span></span><script type="math/tex" id="MathJax-Element-3"> countOfBitsOnLevel = countOfNodesOnLevel * k </script>  bit. </li><li>  The highest (root) level of the tree consists of k bits, and the lowest - of n bits. </li><li>  Each bit of a node of level L determines the state of all bits of a child node of level L - 1: if the bit is set to busy, then all bits of the child node are also set to busy, otherwise, bits of the child node may have 'busy' and 'free' state. </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      It is reasonable to represent bitmap_t in two arrays: the first, the dimension equal to the number of all tree nodes — to store the tree nodes, the second, the tree height dimension — to store the offset of the beginning of each level in the array of tree nodes.  With this method of specifying a tree, the root element can go first, and then, in sequence, the nodes of each of the levels.  However, JeMalloc authors store the root element last in the array, and in front of it are the nodes of the underlying tree levels. 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      As an illustrative example, take a sequence of 92 bits and K = 32 mind.  We assume that the state is 'free' - denoted by a single bit, and the state 'busy' - zero.  Assume also that in the original bit sequence, the bit with index 1 (counting from zero, from right to left in the figure) is set to the busy state.  Then bitmap_t for such a bit sequence will look like the image below: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/webt/d5/ec/cu/d5eccu4zozzshx1upd47oummmxq.png" alt="image">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <i>From the figure we see that the resulting tree has only two levels.</i>  <i>The root level contains 3 unit bits, which indicates the presence of both free and occupied bits in each of the child nodes of the corresponding bit.</i>  <i>In the lower right corner, you can see the Tree view in two arrays: all tree nodes and offsets of each level in the node array.</i> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Assuming that bitmap_t is represented by two arrays (a data array and an array of tree level offsets in the data array), we describe the operation of searching for the first least significant bit in a given bitmap_t: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li>  Starting from the root node, we perform the search operation for the first least significant bit of the node: to solve this problem, modern processors provide special instructions that can significantly reduce the search time.  We will save the found result in the <i>FirstSetedBit</i> variable. </li><li>  At each iteration of the algorithm, we will support the sum of the positions of the found bits: countOfSettedBits + = FirstSetedBit </li><li>  Using the result of the previous step, we go to the child node of the first least significant unit bit of the node and repeat the previous step.  The transition is carried out according to the following simple formula: <math></math><span class="MathJax_Preview" style="color: inherit; display: none;"></span><span class="MathJax_SVG" id="MathJax-Element-4-Frame" tabindex="0" style="font-size: 100%; display: inline-block; position: relative;" data-mathml="<math xmlns=&quot;http://www.w3.org/1998/Math/MathML&quot;><mi>c</mi><mi>u</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>N</mi><mi>o</mi><mi>d</mi><mi>e</mi><mo>=</mo><mi>b</mi><mi>i</mi><mi>t</mi><mi>m</mi><mi>a</mi><mi>p</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mo stretchy=&quot;false&quot;>[</mo><mi>l</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>l</mi><mi>O</mi><mi>f</mi><mi>f</mi><mi>s</mi><mi>e</mi><mi>t</mi><mi>A</mi><mi>r</mi><mi>r</mi><mi>a</mi><mi>y</mi><mo stretchy=&quot;false&quot;>[</mo><mi>c</mi><mi>u</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>l</mi><mo stretchy=&quot;false&quot;>]</mo><mo>+</mo><mi>s</mi><mi>u</mi><mi>m</mi><mi>O</mi><mi>f</mi><mi>B</mi><mi>i</mi><mi>t</mi><mi>s</mi><mo stretchy=&quot;false&quot;>]</mo></math>" role="presentation"><svg xmlns:xlink="http://www.w3.org/1999/xlink" width="77.653ex" height="2.66ex" viewBox="0 -832 33434 1145.2" role="img" focusable="false" style="vertical-align: -0.728ex;" aria-hidden="true"><g stroke="currentColor" fill="currentColor" stroke-width="0" transform="matrix(1 0 0 -1 0 0)"><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-63" x="0" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-75" x="433" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-72" x="1006" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-72" x="1457" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-65" x="1909" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6E" x="2375" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-74" x="2976" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-4E" x="3337" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6F" x="4226" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-64" x="4711" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-65" x="5235" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMAIN-3D" x="5979" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-62" x="7035" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-69" x="7465" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-74" x="7810" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6D" x="8172" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-61" x="9050" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-70" x="9580" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-44" x="10083" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-61" x="10912" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-74" x="11441" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-61" x="11803" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMAIN-5B" x="12332" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6C" x="12611" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-65" x="12909" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-76" x="13376" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-65" x="13861" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6C" x="14328" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-4F" x="14626" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-66" x="15390" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-66" x="15940" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-73" x="16491" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-65" x="16960" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-74" x="17427" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-41" x="17788" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-72" x="18539" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-72" x="18990" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-61" x="19442" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-79" x="19971" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMAIN-5B" x="20469" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-63" x="20747" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-75" x="21181" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-72" x="21753" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-72" x="22205" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-65" x="22656" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6E" x="23123" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-74" x="23723" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-4C" x="24085" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-65" x="24766" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-76" x="25233" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-65" x="25718" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6C" x="26185" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMAIN-5D" x="26483" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMAIN-2B" x="26984" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-73" x="27985" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-75" x="28454" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-6D" x="29027" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-4F" x="29905" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-66" x="30669" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-42" x="31219" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-69" x="31979" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-74" x="32324" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMATHI-73" x="32686" y="0"></use><use xlink:href="https://translate.googleusercontent.com/translate_c?depth=1&amp;rurl=translate.google.com&amp;sl=ru&amp;sp=nmt4&amp;tl=en&amp;u=https://habr.com/ru/post/470674/&amp;xid=17259,15700022,15700043,15700186,15700191,15700256,15700259,15700262,15700265,15700271&amp;usg=ALkJrhiGxU3XXjXn-_nthyDhLacn8hz6rg#MJMAIN-5D" x="33155" y="0"></use></g></svg><span class="MJX_Assistive_MathML" role="presentation"><math xmlns="http://www.w3.org/1998/Math/MathML"><mi>c</mi><mi>u</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>N</mi><mi>o</mi><mi>d</mi><mi>e</mi><mo>=</mo><mi>b</mi><mi>i</mi><mi>t</mi><mi>m</mi><mi>a</mi><mi>p</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mo stretchy="false">[</mo><mi>l</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>l</mi><mi>O</mi><mi>f</mi><mi>f</mi><mi>s</mi><mi>e</mi><mi>t</mi><mi>A</mi><mi>r</mi><mi>r</mi><mi>a</mi><mi>y</mi><mo stretchy="false">[</mo><mi>c</mi><mi>u</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>l</mi><mo stretchy="false">]</mo><mo>+</mo><mi>s</mi><mi>u</mi><mi>m</mi><mi>O</mi><mi>f</mi><mi>B</mi><mi>i</mi><mi>t</mi><mi>s</mi><mo stretchy="false">]</mo></math></span></span><script type="math/tex" id="MathJax-Element-4"> currentNode = bitmapData [levelOffsetArray [currentLevel] + sumOfBits] </script></li><li>  The process continues until the lowest level of the tree is reached.  <i>countOfSettedBits</i> - number of the desired bit in the input bit sequence. </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <b>Pairing Heap</b> is a heap-like tree data structure that allows: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li>  Insert an element with constant time complexity - <b>O (1)</b> and amortized cost <b>O (log N)</b> or <b>O (1)</b> - depending on the implementation. </li><li>  Search at least for constant time - <b>O (1)</b> </li><li>  Merge two Pairing Heap with constant time complexity - <b>O (1)</b> and amortized cost <b>O (log N)</b> or <b>O (1)</b> - depending on implementation </li><li>  Delete an arbitrary element (in particular, a minimal one) with a temporary complexity estimate in <b>O (N)</b> and amortized complexity estimate in <b>O (log N)</b> </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      More formally speaking, Pairing Heap is an arbitrary tree with a dedicated root that satisfies the properties of the heap (the key of each vertex is no less / no more than the key of its parent). 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      A typical Pairing Heap in which the value of the child node is less than the value of the parent node (aka Min Pairing Heap) looks something like this: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/webt/zw/z5/vg/zwz5vgr9hqootyk8ox5pflxuehq.png" alt="image">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      As a rule, Pairing-Heap is represented in the computer’s memory in a completely different way: each node of the Tree stores 3 pointers: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li>  Pointer to the leftmost child node of the current node </li><li>  Pointer to the node's left brother </li><li>  Pointer to the right sibling of the node </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      If any of the indicated nodes is missing, the corresponding node pointer is nullified. 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      For the heap presented in the figure above, we get the following representation: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/webt/cq/gn/ew/cqgnew5fhhsnqd92rsitcdcelh0.png" alt="image">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <i>Here, the pointer to the leftmost child node is indicated by a red dotted arrow, the pointer to the right brother of the node is blue, and the pointer to the left brother is gray.</i>  <i>The solid arrow shows the Pairing Heap representation in a tree-like form that is common for humans.</i> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Please note the following two facts: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li>  At the root of the heap there are always no right and left brothers. </li><li>  If any node U has a non-zero pointer to the left-most child node, then this node will be the 'Head' of the doubly linked list of all the child nodes of U. This list is called siblingList. </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Next, we list the algorithm of the main operations in the <b>Min Pairing-Heap</b> : 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li>  <b><i>Insert node into Pairing Heap:</i></b> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Let there be given a Pairing Heap with a root and a value in it <b>{R, V_1}</b> , as well as a node <b>{U, V_2}</b> .  Then, when inserting a U node into a given Pairing Heap: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li>  If the condition V_2 &lt;V_1 is satisfied: U becomes the new root node of the heap, 'crowding out' the root R to the position of its left child node.  At the same time, the right brother of the node R becomes its oldest left-most node, and the pointer to the left-most node of the node R becomes zero. </li><li>  Otherwise: U becomes the leftmost child node of the root R, and its old brother becomes the oldest leftmost node of the root R. </li></ul></li><li>  <b><i>Merging Two Pairing Heap:</i></b> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Let two Pairing Heaps with roots and values ​​in them <b>{R_1, V_1}</b> , <b>{R_2, V_2},</b> respectively, be given.  We describe one of the algorithms for merging such heaps into the resulting Pairing Heap: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li>  Choose the heap with the lowest value in the root.  Let it be a bunch of {R_1, V_1}. </li><li>  'Detach' the root R_1 from the selected heap: for this, we simply null its pointer to the left-most child node. </li><li>  With the new pointer to the leftmost child node of the root R_1, make the root R_2.  Note that from now on, R_2 loses root status and is a normal node in the resulting heap. </li><li>  We set the right brother of the node R_2: with the new value, make the old (before zeroing) pointer to the leftmost child node of the root R_1, and for R_1, respectively, update the pointer to the left brother. </li></ul></li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Consider the merge algorithm using a specific example: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/webt/ej/zp/0d/ejzp0df0krukqc15zs45hyzwbmo.png" alt="image">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <i>Here, the heap with the root '4' joins the heap with the root '1' (1 &lt;4), becoming its left-most child node.</i>  <i>The pointer to the right brother of the node '4' - is updated, as well as the pointer to the left brother of the node '8'.</i> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li>  <b><i>Removing the root (node ​​with the minimum value) Pairing Heap:</i></b> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      There are several algorithms for removing a node from the Pairing Heap, guaranteed to give an amortized complexity estimate in O (log N).  We describe one of them, called the multipass algorithm and used in JeMalloc: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li>  We delete the root of the given heap, leaving only its leftmost child node. </li><li>  The leftmost child node forms a doubly linked list of all the child nodes of the parent node, and in our case, the previously deleted root.  We will sequentially go through this list to the end and, considering the nodes as the roots of independent Pairing Heap, perform the operation of merging the current element of the list with the next, placing the result in a pre-prepared FIFO queue. </li><li>  Now that the FIFO queue is initialized, we will iterate over it, performing the operation of merging the current element of the queue with the next.  The result of the merger is placed at the end of the queue. </li><li>  We repeat the previous step until one element remains in the queue: the resulting Pairing Heap. </li></ul></li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      A good example of the process described above: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/webt/fv/qv/u3/fvqvu3fctdbahz6vkm552rn5jwq.png" alt="image">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li> <b><i>Removing an arbitrary non-root node Pairing Heap:</i></b> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Consider the deleted node as the root of some subtree of the original Heap.  First, delete the root of this subtree, following the previously described algorithm for removing the Pairing Heap root, and then, perform the procedure of merging the resulting tree with the original one. </li><li>  <b><i>Getting the minimum Pairing Heap element:</i></b> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Just return the value of the heap root. </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      However, our acquaintance with Pairing Heap does not end there: Pairing Heap allows you to perform some operations not immediately, but only when the need arises for them.  In other words, Pairing Heap allows you to perform operations <i>'Lazily'</i> , thereby lowering the amortized cost of some of them. 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Suppose we made K insertions and K deletes in Pairing Heap.  Obviously, the result of these operations becomes necessary only when we request the minimum element from the heap. 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Let's consider how the algorithm of actions of the previously described operations will change during their Lazy implementation: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Taking advantage of the fact that the Kuchi root has at least two null pointers, we will use one of them to represent the head of a doubly linked list (hereinafter <b>auxList</b> ) of elements inserted into the heap, each of which will be considered as the root of an independent Pairing Heap.  Then: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li>  <b><i>Lazy node insertion in Pairing Heap:</i></b> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      When inserting the specified U node into the Pairing Heap { <b>R_1</b> , <b>V_1</b> }, we put it in auxList - after the head of the list: </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <img src="https://habrastorage.org/webt/yi/tc/bq/yitcbqw5edmooxl351tn-qchd5g.png" alt="image">
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    <ul><li>  <b><i>The lazy merging of two Pairing Heap:</i></b> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Lazy Merging two Pairing Heap, similar to the Lazy node insertion, where the inserted node is the root (head of the doubly connected auxList) of one of the heaps. </li><li>  <b><i>Lazy getting the minimum Pairing Heap element:</i></b> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      When requesting a minimum, we go through auxList to the list of roots of independent Pairing Heap, pairwise combining the elements of this list with the merge operation, and return the value of the root containing the minimum element to one of the resulting Pairing Heap. </li><li>  <i><b>Lazy removal of the minimum Pairing Heap element:</b></i> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      When requesting the removal of the minimum element specified by the Pairing Heap, first we find the node containing the minimum element, and then remove it from the tree in which it is the root, inserting its subtrees into the auxList of the main heap. </li><li>  <i><b>Lazy removal of an arbitrary non-root Pairing Heap node:</b></i> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      When deleting an arbitrary non-root Pairing Heap node, the node is removed from the heap, and its child nodes are inserted into the auxList of the main Heap. </li></ul>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      Actually, the use of the Lazy Pairing Heap implementation reduces the amortized cost of insertion and removal of arbitrary nodes in the Pairing Heap: from O (log N) to O (1). 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      That's all, and below you will find a list of useful links and resources: 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <a href="https://github.com/jemalloc/jemalloc">[0] JeMalloc Github Page</a> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <a href="https://www.cs.cmu.edu/~sleator/papers/pairing-heaps.pdf">[1] Original article on Pairing Heaps</a> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <a href="http://citeseerx.ist.psu.edu/viewdoc/download%3Fdoi%3D10.1.1.106.2988%26rep%3Drep1%26type%3Dpdf">[2] Original article on Lazy Implementation Pairing Heaps</a> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      <a href="http://t.me/cxx_group">[3] Telegram channel about code optimizations, C ++, Asm, 'low level' and nothing more than that!</a> 
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+      To be continued… </div>
+      <br>
+        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+        <ins class="adsbygoogle"
+          style="display:block; text-align:center;"
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
+          data-ad-client="ca-pub-6974184241884155"
+          data-ad-slot="8945601208"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      <br>
+    
+<section class="more-articles-navigation-panel js-more-articles-navigation-panel">
+<h4>More articles:</h4>
+<nav class="list-of-articles-container js-list-of-articles-container"><ul class="list-of-pages js-list-of-pages">
+<li><a href="../470660/index.html">What code should be shown at the interview</a></li>
+<li><a href="../470662/index.html">Canon imagePRESS C910: workhorses can now do more</a></li>
+<li><a href="../470664/index.html">Intel introduced a new line of Xeon processors. They are cheaper than earlier models, but still at 14 nm</a></li>
+<li><a href="../470666/index.html">IT-Hogwarts: School of Programmers hh.ru</a></li>
+<li><a href="../470672/index.html">Implementation of Service Desk and CRM. 13 main causes of failure and how to avoid them?</a></li>
+<li><a href="../470676/index.html">Solving algorithmic problems: the possibility of booking a hotel</a></li>
+<li><a href="../470684/index.html">What to write in the resume if there is no work experience</a></li>
+<li><a href="../470686/index.html">Technology for the smart city. Will St. Petersburg become the first metropolis convenient for the blind?</a></li>
+<li><a href="../470688/index.html">What is known about VMworld 2019</a></li>
+<li><a href="../470692/index.html">How we made the new Rosbank website, and what came of it</a></li>
+</ul></nav>
+</section><br />
+<a href="../../allArticles.html"><strong>All Articles</strong></a>
+<script src="../../js/main.js"></script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript" >
+  (function (d, w, c) {
+      (w[c] = w[c] || []).push(function() {
+          try {
+              w.yaCounter70218013 = new Ya.Metrika({
+                  id:70218013,
+                  clickmap:true,
+                  trackLinks:true,
+                  accurateTrackBounce:true,
+                  webvisor:true
+              });
+          } catch(e) { }
+      });
+
+      var n = d.getElementsByTagName("script")[0],
+          s = d.createElement("script"),
+          f = function () { n.parentNode.insertBefore(s, n); };
+      s.type = "text/javascript";
+      s.async = true;
+      s.src = "https://mc.yandex.ru/metrika/watch.js";
+
+      if (w.opera == "[object Opera]") {
+          d.addEventListener("DOMContentLoaded", f, false);
+      } else { f(); }
+  })(document, window, "yandex_metrika_callbacks");
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/70218013" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+
+<!-- Google Analytics -->
+  <script>
+    window.ga = function () { ga.q.push(arguments) }; ga.q = []; ga.l = +new Date;
+    ga('create', 'G-FEDBM7F51Q', 'auto'); ga('send', 'pageview')
+  </script>
+  <script src="https://www.google-analytics.com/analytics.js" async defer></script>
+
+</section>
+
+<footer class="page-footer">
+  <div class="page-footer-legal-info-container page-footer-element">
+    <p>
+      Clever Geek | <span class="page-footer-legal-info-year js-page-footer-legal-info-year">2020</span>
+    </p>
+  </div>
+  <div class="page-footer-counters-container page-footer-element">
+    <div class="company-info js-company-info" itemscope="" itemtype="http://schema.org/Organization">
+      <span itemprop="name">Western Town Media (WTM)</span>
+      <div itemprop="address" itemscope="" itemtype="http://schema.org/PostalAddress">
+        <span itemprop="streetAddress">1968 Stoney Lonesome Road</span>
+        <br>
+        <span itemprop="postalCode">PA 18640</span>
+        <span itemprop="addressLocality">Pittston, USA</span>
+      </div>
+      <span itemprop="telephone">570-362-1316</span>
+    </div>
+    <script type="application/ld+json">
+      {
+        "@context": "http://schema.org",
+        "@type": "Organization",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Pittston, USA",
+          "postalCode": "PA 18640",
+          "streetAddress": "1968 Stoney Lonesome Road"
+        },
+        "name": "Western Town Media (WTM)",
+        "telephone": "570-362-1316"
+      }
+    </script>
+  </div>
+</footer>
+  
+</body>
+
+</html>
